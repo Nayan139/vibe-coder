@@ -12,20 +12,15 @@ type DiffViewerLibProps = {
   useDarkTheme: boolean;
   leftTitle: string;
   rightTitle: string;
+  extraLinesSurroundingDiff?: number;
+  hideLineNumbers?: boolean;
+  showDiffOnly?: boolean;
 };
 
 // Wrapped in an object so React doesn't treat the component fn as a setState updater
 type DiffViewerLib = { Component: React.ComponentType<DiffViewerLibProps> };
 
-function LazyDiffPanel({
-  original,
-  changed,
-  filePath,
-}: {
-  original: string;
-  changed: string;
-  filePath: string;
-}) {
+function LazyDiffPanel({ original, changed }: { original: string; changed: string }) {
   const [lib, setLib] = useState<DiffViewerLib | null>(null);
 
   useEffect(() => {
@@ -44,14 +39,25 @@ function LazyDiffPanel({
 
   const { Component: Viewer } = lib;
   return (
-    <div className="text-xs overflow-auto">
+    <div
+      className="text-xs"
+      style={{
+        overflowX: "auto",
+        overflowY: "auto",
+        maxHeight: "70vh",
+        minWidth: 0,
+      }}
+    >
       <Viewer
         oldValue={original}
         newValue={changed}
         splitView={true}
         useDarkTheme={false}
-        leftTitle={`Before — ${filePath}`}
+        leftTitle="Before"
         rightTitle="After (AI Changes)"
+        extraLinesSurroundingDiff={3}
+        hideLineNumbers={false}
+        showDiffOnly={true}
       />
     </div>
   );
@@ -120,7 +126,6 @@ export function DiffViewer({ originalFiles, changedFiles, onApply, onDiscard }: 
           <LazyDiffPanel
             original={originalFiles[activeFile] ?? ""}
             changed={changedFiles[activeFile] ?? ""}
-            filePath={activeFile}
           />
         )}
       </div>

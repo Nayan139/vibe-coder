@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import prettier from "prettier";
 import { createClient } from "@/lib/supabase/server";
 import { callAI } from "@/lib/ai-client";
 
@@ -88,7 +89,34 @@ Return the modified files as JSON.`;
       }
     }
 
-    const assistantSummary = `I've made the following changes:\n${Object.keys(changeMap)
+    const formattedChanges: Record<string, string> = {};
+    for (const [filePath, content] of Object.entries(changeMap)) {
+      try {
+        const parser =
+          filePath.endsWith(".tsx") || filePath.endsWith(".jsx")
+            ? "babel"
+            : filePath.endsWith(".ts")
+              ? "typescript"
+              : filePath.endsWith(".css")
+                ? "css"
+                : filePath.endsWith(".json")
+                  ? "json"
+                  : "babel";
+
+        formattedChanges[filePath] = await prettier.format(content as string, {
+          parser,
+          semi: true,
+          singleQuote: true,
+          tabWidth: 2,
+          trailingComma: "es5",
+          printWidth: 80,
+        });
+      } catch {
+        formattedChanges[filePath] = content as string;
+      }
+    }
+
+    const assistantSummary = `I've made the following changes:\n${Object.keys(formattedChanges)
       .map((f) => `- ${f}`)
       .join("\n")}`;
 
@@ -102,7 +130,7 @@ Return the modified files as JSON.`;
 
       const { error: updErr } = await supabase
         .from("ai_sessions")
-        .update({ status: "done", changes: changeMap, prompt })
+        .update({ status: "done", changes: formattedChanges, prompt })
         .eq("id", sessionId)
         .eq("user_id", user.id);
 
@@ -115,7 +143,7 @@ Return the modified files as JSON.`;
           user_id: user.id,
           prompt,
           status: "done",
-          changes: changeMap,
+          changes: formattedChanges,
           project_id: null,
         })
         .select("id")
@@ -132,7 +160,7 @@ Return the modified files as JSON.`;
       }
     }
 
-    return NextResponse.json({ success: true, changes: changeMap, sessionId: resolvedSessionId });
+    return NextResponse.json({ success: true, changes: formattedChanges, sessionId: resolvedSessionId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "AI modification failed";
     console.error("AI modify error:", err);
