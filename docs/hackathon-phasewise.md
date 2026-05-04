@@ -1,7 +1,7 @@
 # 🚀 VibeCode — AI-Powered No-Code Prototyping Platform
 
 > **Goal:** Build a platform where non-developers can connect their GitHub/GitLab repo, describe changes in plain English, preview results, and raise a PR — all powered by AI.
-> **Time Limit:** 12 Hours
+> **Time Limit:** 12 Hours | **Total Phases:** 4 | **Total Steps:** 10
 > **Stack:** Next.js 14, Supabase, GROQ / NVIDIA AI, GitHub API, GitLab API
 
 ---
@@ -24,21 +24,26 @@
 2. [Tech Stack](#tech-stack)
 3. [Database Schema](#database-schema)
 4. [Environment Variables](#environment-variables)
-5. [Hour-by-Hour Execution Plan](#hour-by-hour-execution-plan)
-   - [Hour 1–2: Project Setup & Auth](#hour-12--project-setup--auth)
-   - [Hour 2–3: Dashboard & Git OAuth](#hour-23--dashboard--git-oauth)
-   - [Hour 3–4: Repo Selector & README Parser](#hour-34--repo-selector--readme-parser)
-   - [Hour 4–6: Core AI Editor](#hour-46--core-ai-editor)
-   - [Hour 6–7: Preview System](#hour-67--preview-system)
-   - [Hour 7–8: Branch Creation & Push](#hour-78--branch-creation--push)
-   - [Hour 8–9: AI PR/MR Creation](#hour-89--ai-prmr-creation)
-   - [Hour 9–10: UI/UX Polish](#hour-910--uiux-polish)
-   - [Hour 10–11: Testing & Bug Fixes](#hour-1011--testing--bug-fixes)
-   - [Hour 11–12: Demo Prep & Deploy](#hour-1112--demo-prep--deploy)
+5. [Phase-wise Execution Plan](#phase-wise-execution-plan)
+   - [Phase 1 — Foundation (Hour 1–3)](#phase-1--foundation-hour-13)
+     - [Hour 1–2: Project Setup & Auth](#-hour-12--project-setup--auth)
+     - [Hour 2–3: Dashboard & Git OAuth Connection](#-hour-23--dashboard--git-oauth-connection)
+   - [Phase 2 — Core AI Features (Hour 3–7)](#phase-2--core-ai-features-hour-37)
+     - [Hour 3–4: Repo Selector & README Parser](#-hour-34--repo-selector--readme-parser)
+     - [Hour 4–6: Core AI Editor](#-hour-46--core-ai-editor-most-critical)
+     - [Hour 6–7: Preview System](#-hour-67--preview-system)
+   - [Phase 3 — Git Automation (Hour 7–9)](#phase-3--git-automation-hour-79)
+     - [Hour 7–8: Branch Creation & Push](#-hour-78--branch-creation--push)
+     - [Hour 8–9: AI PR/MR Creation](#-hour-89--ai-prmr-creation)
+   - [Phase 4 — Ship It (Hour 9–12)](#phase-4--ship-it-hour-912)
+     - [Hour 9–10: UI/UX Polish](#-hour-910--uiux-polish)
+     - [Hour 10–11: Testing & Bug Fixes](#-hour-1011--testing--bug-fixes)
+     - [Hour 11–12: Demo Prep & Deploy](#-hour-1112--demo-prep--deploy)
 6. [API Routes Reference](#api-routes-reference)
 7. [AI Model Usage Guide](#ai-model-usage-guide)
 8. [UI Component Checklist](#ui-component-checklist)
 9. [Risk Management](#risk-management)
+10. [Changelog](#-changelog)
 
 ---
 
@@ -209,6 +214,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 # ── GITHUB OAUTH ──────────────────────────────────────────────────────────────
 # https://github.com/settings/developers → OAuth Apps → New OAuth App
 # Callback URL: http://localhost:3000/api/auth/github/callback
+# NOTE: This is for REPO ACCESS from the dashboard — NOT for login
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
 
@@ -216,6 +222,7 @@ GITHUB_CLIENT_SECRET=your_github_client_secret
 # https://gitlab.com/-/profile/applications
 # Redirect URI: http://localhost:3000/api/auth/gitlab/callback
 # Scopes: api, read_user, read_repository, write_repository
+# NOTE: This is for REPO ACCESS from the dashboard — NOT for login
 GITLAB_CLIENT_ID=your_gitlab_client_id
 GITLAB_CLIENT_SECRET=your_gitlab_client_secret
 
@@ -257,11 +264,29 @@ NODE_ENV=development
 
 ---
 
-## Hour-by-Hour Execution Plan
+## Phase-wise Execution Plan
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  PHASE 1          PHASE 2              PHASE 3        PHASE 4           │
+│  Foundation       Core AI Features     Git Automation  Ship It          │
+│  Hour 1–3         Hour 3–7             Hour 7–9        Hour 9–12        │
+│                                                                         │
+│  ✅ Auth           ✅ README Parser     ✅ Push Branch  ✅ UI Polish     │
+│  ✅ Dashboard      ✅ AI Editor         ✅ Create PR    ✅ Testing       │
+│  ✅ Git Connect    ✅ Diff Preview                      ✅ Deploy        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-### Hour 1–2 — Project Setup & Auth
+## Phase 1 — Foundation `Hour 1–3`
+
+> **Outcome:** Users can sign up, log in, and connect their GitHub/GitLab account. Repo list is visible on the dashboard.
+
+---
+
+### ⏱ Hour 1–2 — Project Setup & Auth
 
 **Goal:** Running app with email/password login/signup and protected routes.
 
@@ -434,9 +459,15 @@ Footer:          Links + Copyright
 
 > 🚫 **Do NOT add "Login with GitHub" or "Login with GitLab" buttons anywhere on the landing, login, or signup pages. Those OAuth flows only exist inside the dashboard.**
 
+#### ✅ Phase 1 / Hour 1–2 Done When:
+- App runs at `localhost:3000`
+- Signup with email creates a user in Supabase
+- Login redirects to `/dashboard`
+- Visiting `/dashboard` without login redirects to `/login`
+
 ---
 
-### Hour 2–3 — Dashboard & Git OAuth Connection
+### ⏱ Hour 2–3 — Dashboard & Git OAuth Connection
 
 **Goal:** Logged-in user connects their GitHub/GitLab account to grant repo access.
 
@@ -480,7 +511,7 @@ export async function GET(request: Request) {
   });
   const githubUser = await userResponse.json();
 
-  // Save to Supabase (get user_id from session cookie)
+  // Save to Supabase — link to the logged-in user_id from session
   // ... store in git_connections table
 
   return Response.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard`);
@@ -514,7 +545,7 @@ export async function GET(request: Request) {
 │  ⚙️  Settings            │   Connect your Git account        │
 │                         │   to start editing repos          │
 │  ── Git Accounts ──     │                                   │
-│  [+ Connect GitHub]     │   [Connect GitHub]  [Connect GitLab] │
+│  [+ Connect GitHub]     │   [Connect GitHub] [Connect GitLab]│
 │  [+ Connect GitLab]     │                                   │
 │                         │  ── After connecting ─────────────│
 │  ── After connecting ── │                                   │
@@ -528,20 +559,33 @@ export async function GET(request: Request) {
 
 > 💡 **UX Note:** First-time users see the empty state with Connect buttons front and center. Once they connect at least one account, the repos grid takes over the main area.
 
+#### ✅ Phase 1 / Hour 2–3 Done When:
+- "Connect GitHub" button redirects to GitHub OAuth
+- After approving, user is redirected back to `/dashboard`
+- `git_connections` row is created in Supabase
+- Repos show up as cards in the dashboard
+
 ---
 
-### Hour 3–4 — Repo Selector & README Parser
+## Phase 2 — Core AI Features `Hour 3–7`
 
-**Goal:** User picks a repo → picks a branch → AI reads README.
+> **Outcome:** User can pick any repo and branch, give a plain-English prompt, and see AI-generated code changes side by side.
+
+---
+
+### ⏱ Hour 3–4 — Repo Selector & README Parser
+
+**Goal:** User picks a repo → picks a branch → AI reads README to understand the project.
 
 #### Tasks Checklist
 
 - [ ] Repo detail page: `/dashboard/repo/[id]`
-- [ ] Branch dropdown fetching from API
-- [ ] On branch select → fetch `README.md` content
-- [ ] Send README to GROQ for command extraction
-- [ ] Display parsed setup info card
-- [ ] Save project record to Supabase
+- [ ] Branch dropdown — fetches all branches from API
+- [ ] On branch select → fetch `README.md` content from GitHub/GitLab
+- [ ] Send README content to AI for command extraction
+- [ ] Display parsed setup info card (install + start commands)
+- [ ] Save project record to Supabase `projects` table
+- [ ] "Start Editing with AI" button → navigate to editor
 
 #### File: `app/api/ai/parse-readme/route.ts`
 
@@ -584,13 +628,18 @@ export async function POST(request: Request) {
 └─────────────────────────────────────────┘
 ```
 
+#### ✅ Phase 2 / Hour 3–4 Done When:
+- User can click any repo card → see its branch list
+- Selecting a branch triggers README fetch
+- Setup Info card appears with AI-parsed install/start commands
+
 ---
 
-### Hour 4–6 — Core AI Editor (Most Critical)
+### ⏱ Hour 4–6 — Core AI Editor (Most Critical)
 
-**Goal:** User types what they want → AI modifies the code.
+**Goal:** User types what they want → AI modifies the code → diff is shown.
 
-This is the **heart of the product**. Budget the most time here.
+> 🔴 **This is the heart of the product. Budget the most time here.**
 
 #### The AI Editing Flow
 
@@ -598,7 +647,7 @@ This is the **heart of the product**. Budget the most time here.
 1. Fetch file tree from GitHub/GitLab API
 2. User describes change in plain English
 3. Smart context builder selects relevant files
-4. Send to GROQ with strict JSON output prompt
+4. Send to AI with strict JSON output prompt
 5. Receive: { "src/app/page.tsx": "...new content..." }
 6. Show diff view (old vs new) with syntax highlighting
 7. User clicks "Apply Changes"
@@ -662,14 +711,16 @@ Return the modified files as JSON.`;
 #### Smart Context Selection (keeps tokens low)
 
 ```typescript
-function selectRelevantFiles(allFiles: string[], userPrompt: string, fileContents: Record<string, string>) {
+function selectRelevantFiles(
+  allFiles: string[],
+  userPrompt: string,
+  fileContents: Record<string, string>
+) {
   const keywords = userPrompt.toLowerCase().split(' ');
   const alwaysInclude = ['package.json', 'app/page.tsx', 'app/layout.tsx'];
 
   const relevant = allFiles.filter(path => {
-    // Always include core files
     if (alwaysInclude.some(f => path.includes(f))) return true;
-    // Include if filename matches prompt keywords
     return keywords.some(kw => path.toLowerCase().includes(kw));
   });
 
@@ -708,13 +759,19 @@ function selectRelevantFiles(allFiles: string[], userPrompt: string, fileContent
 └──────────────┴──────────────────────────┴─────────────────┘
 ```
 
+#### ✅ Phase 2 / Hour 4–6 Done When:
+- User can type a prompt like "Make the hero title blue"
+- AI returns a JSON diff of changed files
+- Diff viewer shows old vs new code side by side
+- Chat history is saved to `chat_messages` table
+
 ---
 
-### Hour 6–7 — Preview System
+### ⏱ Hour 6–7 — Preview System
 
-**Goal:** User sees changes visually before accepting.
+**Goal:** User sees exactly what changed visually before accepting.
 
-#### Option A — Diff View (Recommended for hackathon)
+#### Option A — Diff View ✅ Recommended for hackathon
 
 Fast to implement, reliable, clearly shows what changed.
 
@@ -734,13 +791,13 @@ function DiffPreview({ originalFiles, changedFiles }) {
       <div className="flex gap-2 mb-4">
         {Object.keys(changedFiles).map(path => (
           <button key={path} onClick={() => setActiveFile(path)}
-            className={`px-3 py-1 rounded text-sm ${activeFile === path ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
+            className={`px-3 py-1 rounded text-sm ${
+              activeFile === path ? 'bg-blue-500 text-white' : 'bg-gray-100'
+            }`}>
             {path.split('/').pop()}
           </button>
         ))}
       </div>
-
-      {/* Diff viewer */}
       <ReactDiffViewer
         oldValue={originalFiles[activeFile] || ''}
         newValue={changedFiles[activeFile] || ''}
@@ -754,7 +811,7 @@ function DiffPreview({ originalFiles, changedFiles }) {
 }
 ```
 
-#### Option B — WebContainer Live Preview (Bonus if time allows)
+#### Option B — WebContainer Live Preview ⚡ Bonus if time allows
 
 ```bash
 npm install @webcontainer/api
@@ -766,40 +823,48 @@ import { WebContainer } from '@webcontainer/api';
 async function startPreview(files: Record<string, string>) {
   const webcontainerInstance = await WebContainer.boot();
 
-  // Write all files
   for (const [path, content] of Object.entries(files)) {
     await webcontainerInstance.fs.writeFile(path, content);
   }
 
-  // Install and start
   const installProcess = await webcontainerInstance.spawn('npm', ['install']);
   await installProcess.exit;
 
-  const serverProcess = await webcontainerInstance.spawn('npm', ['run', 'dev']);
+  await webcontainerInstance.spawn('npm', ['run', 'dev']);
 
-  // Get preview URL
   webcontainerInstance.on('server-ready', (port, url) => {
-    setPreviewUrl(url); // Show in iframe
+    setPreviewUrl(url); // Embed in iframe
   });
 }
 ```
 
-> ⚠️ **Note:** WebContainers require `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers. Add to `next.config.js`. Start with Option A and add B if time permits.
+> ⚠️ **Note:** WebContainers require `Cross-Origin-Embedder-Policy` and `Cross-Origin-Opener-Policy` headers in `next.config.js`. Start with Option A. Add B only if you finish everything else early.
+
+#### ✅ Phase 2 / Hour 6–7 Done When:
+- Changed files render in the diff viewer with syntax highlighting
+- User can tab between multiple changed files
+- "Apply" and "Discard" buttons are wired up
 
 ---
 
-### Hour 7–8 — Branch Creation & Push
+## Phase 3 — Git Automation `Hour 7–9`
 
-**Goal:** User is satisfied → create branch → push changed files.
+> **Outcome:** User clicks one button and VibeCode creates a branch, pushes all AI changes, and raises a PR/MR with an AI-written description.
+
+---
+
+### ⏱ Hour 7–8 — Branch Creation & Push
+
+**Goal:** User approves changes → new branch created → all files pushed.
 
 #### Tasks Checklist
 
-- [ ] "Create Branch & Push" button with branch name input
+- [ ] "Create Branch & Push" button with editable branch name input
 - [ ] Pre-fill branch name: `ai-changes-[timestamp]`
-- [ ] API route to create branch via GitHub/GitLab API
-- [ ] Loop through changed files and update each via Contents API
-- [ ] Auto-generate commit message using AI
-- [ ] Show success with link to branch
+- [ ] API route creates new branch from selected base branch
+- [ ] Loop through every changed file → push via Contents API
+- [ ] AI auto-generates the commit message
+- [ ] Show success toast with link to new branch
 
 #### File: `app/api/git/push/route.ts`
 
@@ -828,18 +893,14 @@ export async function POST(request: Request) {
 
   // Step 3: Push each changed file
   for (const [filePath, newContent] of Object.entries(changes)) {
-    // Get current file SHA (needed for update)
     let fileSha: string | undefined;
     try {
       const { data: existingFile } = await octokit.repos.getContent({
         owner, repo, path: filePath, ref: newBranch
       });
-      if (!Array.isArray(existingFile)) {
-        fileSha = existingFile.sha;
-      }
-    } catch { /* file doesn't exist yet */ }
+      if (!Array.isArray(existingFile)) fileSha = existingFile.sha;
+    } catch { /* new file */ }
 
-    // Create or update file
     await octokit.repos.createOrUpdateFileContents({
       owner, repo,
       path: filePath,
@@ -862,10 +923,10 @@ import { callAI } from '@/lib/ai-client';
 async function generateCommitMessage(changes: Record<string, string>, userPrompt: string) {
   const fileList = Object.keys(changes).join(', ');
 
-  // Uses LLM_MODEL_FAST — simple task doesn't need the big model
+  // Uses LLM_MODEL_FAST — simple task, no need for the big model
   const message = await callAI([{
     role: 'user',
-    content: `Write a concise git commit message (max 72 chars, conventional commits format) for these changes:
+    content: `Write a concise git commit message (max 72 chars, conventional commits format):
     User asked: "${userPrompt}"
     Files changed: ${fileList}
     Return ONLY the commit message, nothing else.`
@@ -875,28 +936,35 @@ async function generateCommitMessage(changes: Record<string, string>, userPrompt
 }
 ```
 
+#### ✅ Phase 3 / Hour 7–8 Done When:
+- New branch appears on GitHub after clicking push
+- All changed files are visible in the new branch
+- Commit message is auto-generated and meaningful
+
 ---
 
-### Hour 8–9 — AI PR/MR Creation
+### ⏱ Hour 8–9 — AI PR/MR Creation
 
-**Goal:** AI writes and raises the Pull Request automatically.
+**Goal:** PR is automatically raised with an AI-written title and description.
 
 #### Tasks Checklist
 
 - [ ] Auto-trigger PR creation after successful push
-- [ ] Send changes summary to GROQ for PR description
+- [ ] AI generates a professional PR title + description
 - [ ] Create PR via GitHub API / MR via GitLab API
+- [ ] Save `pr_url` to `ai_sessions` table
 - [ ] Show PR result card with title, URL, status badge
+- [ ] "View PR on GitHub" button opens in new tab
 
 #### File: `app/api/git/create-pr/route.ts`
 
 ```typescript
 import { callAI } from '@/lib/ai-client';
+import { Octokit } from '@octokit/rest';
 
 export async function POST(request: Request) {
   const { repoFullName, baseBranch, newBranch, changes, userPrompt, accessToken } = await request.json();
 
-  // Generate PR description with AI — uses LLM_MODEL_FAST from env
   const prDescription = await generatePRDescription(changes, userPrompt);
   const prTitle = `AI Changes: ${userPrompt.slice(0, 60)}${userPrompt.length > 60 ? '...' : ''}`;
 
@@ -922,16 +990,16 @@ export async function POST(request: Request) {
 async function generatePRDescription(changes: Record<string, string>, userPrompt: string) {
   const fileList = Object.keys(changes).map(f => `- ${f}`).join('\n');
 
-  // Uses LLM_MODEL_FAST — text generation, no need for the primary model
+  // Uses LLM_MODEL_FAST — text generation task
   return await callAI([{
     role: 'user',
-    content: `Write a professional GitHub PR description in markdown for these AI-generated changes.
+    content: `Write a professional GitHub PR description in markdown.
 
 User's request: "${userPrompt}"
 Files changed:
 ${fileList}
 
-Include these sections:
+Include sections:
 ## Summary
 ## Changes Made
 ## Testing Notes
@@ -955,20 +1023,32 @@ Keep it professional and concise.`
 └─────────────────────────────────────────────────┘
 ```
 
+#### ✅ Phase 3 / Hour 8–9 Done When:
+- PR exists on GitHub with AI-written description
+- `pr_url` is saved in `ai_sessions` in Supabase
+- PR result card shows with working link
+
 ---
 
-### Hour 9–10 — UI/UX Polish
+## Phase 4 — Ship It `Hour 9–12`
 
-**Goal:** Make it look like a real product that judges will love.
+> **Outcome:** App looks polished, all flows tested end-to-end, deployed on Vercel and ready to demo.
+
+---
+
+### ⏱ Hour 9–10 — UI/UX Polish
+
+**Goal:** Make it look and feel like a real product that judges will love.
 
 #### Priority Fixes
 
-- [ ] Loading skeleton screens (repos list, file tree)
-- [ ] Toast notifications for all actions (success/error/info)
+- [ ] Loading skeleton screens (repos list, file tree, AI response)
+- [ ] Toast notifications for all actions (success / error / info)
 - [ ] Empty states with helpful CTAs ("Connect GitHub to get started")
-- [ ] Step progress indicator
-- [ ] Error boundaries with fallback UI
+- [ ] Step progress indicator showing current phase
+- [ ] Error boundaries with friendly fallback UI
 - [ ] Responsive layout (basic mobile support)
+- [ ] Consistent colour scheme and spacing throughout
 
 #### Step Progress Indicator Component
 
@@ -1022,38 +1102,50 @@ FEATURE 3:   🚀 Auto PR in Seconds
              "Review the diff, approve, and AI creates the branch and PR automatically."
 ```
 
+#### ✅ Phase 4 / Hour 9–10 Done When:
+- No blank white screens — every state has a loading or empty UI
+- Toasts fire on success and error for all major actions
+- Step progress bar reflects where the user is in the flow
+
 ---
 
-### Hour 10–11 — Testing & Bug Fixes
+### ⏱ Hour 10–11 — Testing & Bug Fixes
 
-**Goal:** End-to-end flow works perfectly for the demo.
+**Goal:** Every step of the demo flow works perfectly, end to end.
 
-#### Test Checklist
+#### Full E2E Test Checklist
 
-- [ ] **Auth flow:** Signup → email verification → login → redirect to dashboard
-- [ ] **GitHub OAuth:** Connect → see repos → repo cards load correctly
-- [ ] **Repo selection:** Click repo → branch dropdown loads → select branch
-- [ ] **README parsing:** GROQ returns valid JSON with install/start commands
-- [ ] **AI editing:** Submit prompt → changes returned → diff renders correctly
-- [ ] **Branch push:** New branch created → files updated → no API errors
-- [ ] **PR creation:** PR created on GitHub with AI description → URL works
-- [ ] **Supabase:** All data saved correctly — sessions, messages, changes
-- [ ] **Error handling:** What happens if GROQ is slow? If GitHub API fails?
+- [ ] **Signup:** New email → account created → lands on dashboard
+- [ ] **Login:** Existing email → login → lands on dashboard
+- [ ] **Auth guard:** Visit `/dashboard` logged out → redirected to `/login`
+- [ ] **Connect GitHub:** OAuth flow completes → row in `git_connections` → repos load
+- [ ] **Repo selection:** Click repo card → branch dropdown loads correctly
+- [ ] **Branch select:** Choose branch → README fetched → setup card renders
+- [ ] **AI edit:** Submit prompt → AI returns valid JSON → diff viewer renders
+- [ ] **Apply changes:** "Apply" button saves changes to session state
+- [ ] **Push:** New branch created on GitHub → files updated
+- [ ] **PR:** PR created on GitHub → AI description looks good → URL opens
+- [ ] **Supabase check:** `ai_sessions`, `chat_messages`, `projects` all have correct data
+- [ ] **Error cases:** What if GROQ is slow? GitHub API fails? README doesn't exist?
 
-#### Use This Test Repo
+#### Test Repo to Use
 
-Use a small, simple Next.js repo (your own or a public one) for demo testing:
 ```
 https://github.com/vercel/next.js/tree/canary/examples/hello-world
 ```
 
-A simple prompt to test: `"Change the main heading text to say Welcome to VibeCode"`
+Test prompt: `"Change the main heading text to say Welcome to VibeCode"`
+
+#### ✅ Phase 4 / Hour 10–11 Done When:
+- Full demo flow runs without any manual intervention
+- No console errors during the demo path
+- All Supabase tables have the expected data
 
 ---
 
-### Hour 11–12 — Demo Prep & Deploy
+### ⏱ Hour 11–12 — Demo Prep & Deploy
 
-**Goal:** Live app on the internet, ready to demo.
+**Goal:** Live app on the internet, polished demo script ready, practiced 3 times.
 
 #### Deployment Steps
 
@@ -1064,27 +1156,66 @@ git add . && git commit -m "feat: hackathon submission" && git push
 # Deploy to Vercel
 npx vercel --prod
 
-# Or connect via vercel.com dashboard:
-# New Project → Import GitHub repo → Add env vars → Deploy
+# Or via Vercel dashboard:
+# New Project → Import repo → Add all env vars → Deploy
 ```
 
-#### Required Vercel Environment Variables
-
-Add all variables from `.env.local` to the Vercel dashboard under:
-`Project Settings → Environment Variables`
-
-#### Demo Flow Script (Practice 3 Times)
+#### All Vercel Environment Variables to Add
 
 ```
-1. Open landing page → explain the problem (30 sec)
-2. Sign up / log in → show dashboard (15 sec)
-3. Click "Connect GitHub" → authorize → repos load (30 sec)
-4. Select a repo → pick main branch → show README parse result (30 sec)
-5. Type prompt: "Change the hero button color to green and text to Get Started Free"
-6. Show AI thinking → diff appears → walk through changes (60 sec)
-7. Click "Create Branch & Push" → branch created (15 sec)
-8. PR auto-created → open it on GitHub → show AI description (30 sec)
-9. Wrap up with the value prop (30 sec)
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET
+GITLAB_CLIENT_ID
+GITLAB_CLIENT_SECRET
+LLM_PROVIDER
+GROQ_API_KEY
+NVIDIA_API_KEY
+LLM_MODEL_PRIMARY
+LLM_MODEL_FAST
+LLM_MODEL_AGENT
+LLM_MAX_TOKENS_CODE
+LLM_MAX_TOKENS_TEXT
+LLM_MAX_TOKENS_AGENT
+LLM_TEMPERATURE
+NEXT_PUBLIC_APP_URL        ← set to your Vercel URL
+NEXTAUTH_SECRET
+NEXTAUTH_URL               ← set to your Vercel URL
+NODE_ENV                   ← production
+```
+
+> ⚠️ After deploy, update GitHub OAuth App callback URL from `localhost:3000` to your Vercel production URL.
+
+#### Demo Flow Script — Practice 3 Times
+
+```
+[0:00] Open landing page
+       → "This is VibeCode. Non-developers can modify real repos without touching code."
+
+[0:30] Click "Get Started Free" → signup with email → lands on dashboard
+
+[0:45] Click "Connect GitHub" → authorize → repos appear as cards
+
+[1:15] Click a repo → select main branch → README parses → setup card appears
+
+[1:45] Type prompt: "Change the hero button color to green and text to Get Started Free"
+       → Show AI thinking indicator
+
+[2:15] Diff viewer appears
+       → Walk through the before/after changes file by file
+
+[3:15] Click "Create Branch & Push"
+       → Branch name: ai-changes-[timestamp]
+       → Show success toast
+
+[3:30] PR auto-created
+       → Open on GitHub
+       → Show the AI-written description
+
+[4:00] Wrap up
+       → "One prompt. One click. Real PR. No terminal. No code knowledge needed."
 ```
 
 #### 3-Slide Pitch Deck
@@ -1099,57 +1230,58 @@ Slide 2 — SOLUTION (Live Demo)
 No terminal. No code knowledge. Fully AI-powered."
 
 Slide 3 — TECH & IMPACT
-Stack: Next.js + Supabase + GROQ + GitHub API
-Use cases: Design tweaks, copy changes, color updates, layout shifts
-Next: Add preview with WebContainers, support more languages
+Stack: Next.js 14 + Supabase + GROQ/NVIDIA + GitHub/GitLab API
+Use cases: Copy changes, colour updates, layout tweaks, feature flags
+Next steps: WebContainer live preview, multi-file agent, team workspaces
 ```
+
+#### ✅ Phase 4 / Hour 11–12 Done When:
+- App is live on a public Vercel URL
+- OAuth callback URLs are updated to production domain
+- Demo script rehearsed 3 times without errors
 
 ---
 
 ## API Routes Reference
 
-| Route | Method | Purpose |
-|---|---|---|
-| `/api/auth/github` | GET | GitHub OAuth callback |
-| `/api/auth/gitlab` | GET | GitLab OAuth callback |
-| `/api/git/repos` | GET | Fetch user's repos |
-| `/api/git/branches` | GET | Fetch branches for a repo |
-| `/api/git/files` | GET | Fetch file tree and content |
-| `/api/git/push` | POST | Create branch + push changes |
-| `/api/git/create-pr` | POST | Create PR/MR via API |
-| `/api/ai/parse-readme` | POST | Extract setup commands from README |
-| `/api/ai/modify` | POST | AI code modification |
-| `/api/ai/commit-message` | POST | Generate commit message |
-| `/api/ai/pr-description` | POST | Generate PR description |
+| Route | Method | Phase | Purpose |
+|---|---|---|---|
+| `/api/auth/github` | GET | Phase 1 | GitHub OAuth callback — repo access only |
+| `/api/auth/gitlab` | GET | Phase 1 | GitLab OAuth callback — repo access only |
+| `/api/git/repos` | GET | Phase 1 | Fetch user's repos from connected account |
+| `/api/git/branches` | GET | Phase 2 | Fetch all branches for a repo |
+| `/api/git/files` | GET | Phase 2 | Fetch file tree and file content |
+| `/api/ai/parse-readme` | POST | Phase 2 | Extract setup commands from README |
+| `/api/ai/modify` | POST | Phase 2 | AI code modification — returns JSON diff |
+| `/api/ai/commit-message` | POST | Phase 3 | Generate commit message |
+| `/api/ai/pr-description` | POST | Phase 3 | Generate PR description |
+| `/api/git/push` | POST | Phase 3 | Create branch + push all changed files |
+| `/api/git/create-pr` | POST | Phase 3 | Create PR/MR via GitHub/GitLab API |
 
 ---
 
 ## AI Model Usage Guide
 
-All AI calls are driven by the env variables `LLM_PROVIDER`, `LLM_MODEL_PRIMARY`, `LLM_MODEL_FAST`, and `LLM_MODEL_AGENT`. This means you swap providers by **only changing your `.env.local`** — no code changes needed.
+All AI calls are driven by the env variables `LLM_PROVIDER`, `LLM_MODEL_PRIMARY`, `LLM_MODEL_FAST`, and `LLM_MODEL_AGENT`. Swap providers by **only changing `.env.local`** — no code changes needed.
 
-| Task | Env Variable Used | Default Model (GROQ) | Default Model (NVIDIA) |
-|---|---|---|---|
-| Code modification | `LLM_MODEL_PRIMARY` | `llama3-70b-8192` | `meta/llama-3.1-70b-instruct` |
-| README parsing | `LLM_MODEL_PRIMARY` | `llama3-70b-8192` | `meta/llama-3.1-70b-instruct` |
-| Commit message | `LLM_MODEL_FAST` | `llama3-8b-8192` | `meta/llama-3.1-8b-instruct` |
-| PR description | `LLM_MODEL_FAST` | `llama3-8b-8192` | `meta/llama-3.1-8b-instruct` |
-| Multi-file agent | `LLM_MODEL_AGENT` | `llama3-70b-8192` | `nvidia/llama-3.1-nemotron-70b-instruct` |
+| Task | Phase | Env Variable | Default (GROQ) | Default (NVIDIA) |
+|---|---|---|---|---|
+| README parsing | Phase 2 | `LLM_MODEL_PRIMARY` | `llama3-70b-8192` | `meta/llama-3.1-70b-instruct` |
+| Code modification | Phase 2 | `LLM_MODEL_PRIMARY` | `llama3-70b-8192` | `meta/llama-3.1-70b-instruct` |
+| Multi-file agent | Phase 2 | `LLM_MODEL_AGENT` | `llama3-70b-8192` | `nvidia/llama-3.1-nemotron-70b-instruct` |
+| Commit message | Phase 3 | `LLM_MODEL_FAST` | `llama3-8b-8192` | `meta/llama-3.1-8b-instruct` |
+| PR description | Phase 3 | `LLM_MODEL_FAST` | `llama3-8b-8192` | `meta/llama-3.1-8b-instruct` |
 
 ### Unified AI Client (`lib/ai-client.ts`)
 
-Create one shared client so all API routes use the provider from env:
-
 ```typescript
-// lib/ai-client.ts
-
 interface AIMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
 interface AIOptions {
-  model?: 'primary' | 'fast' | 'agent'; // maps to LLM_MODEL_* env vars
+  model?: 'primary' | 'fast' | 'agent';
   maxTokens?: number;
   temperature?: number;
 }
@@ -1158,28 +1290,24 @@ export async function callAI(messages: AIMessage[], options: AIOptions = {}) {
   const provider = process.env.LLM_PROVIDER || 'groq';
   const modelKey = options.model || 'primary';
 
-  // Resolve model name from env
   const modelMap = {
     primary: process.env.LLM_MODEL_PRIMARY || 'llama3-70b-8192',
     fast:    process.env.LLM_MODEL_FAST    || 'llama3-8b-8192',
     agent:   process.env.LLM_MODEL_AGENT   || 'llama3-70b-8192',
   };
-  const model = modelMap[modelKey];
 
-  // Resolve max tokens from env
   const tokenMap = {
     primary: parseInt(process.env.LLM_MAX_TOKENS_CODE  || '4000'),
     fast:    parseInt(process.env.LLM_MAX_TOKENS_TEXT  || '800'),
     agent:   parseInt(process.env.LLM_MAX_TOKENS_AGENT || '6000'),
   };
+
+  const model = modelMap[modelKey];
   const maxTokens = options.maxTokens || tokenMap[modelKey];
   const temperature = options.temperature ?? parseFloat(process.env.LLM_TEMPERATURE || '0.1');
 
-  if (provider === 'groq') {
-    return callGroq(messages, model, maxTokens, temperature);
-  } else if (provider === 'nvidia') {
-    return callNvidia(messages, model, maxTokens, temperature);
-  }
+  if (provider === 'groq') return callGroq(messages, model, maxTokens, temperature);
+  if (provider === 'nvidia') return callNvidia(messages, model, maxTokens, temperature);
 
   throw new Error(`Unknown LLM_PROVIDER: ${provider}`);
 }
@@ -1211,99 +1339,73 @@ async function callNvidia(messages: AIMessage[], model: string, maxTokens: numbe
 }
 ```
 
-### Usage in Any API Route
-
-```typescript
-// app/api/ai/modify/route.ts
-import { callAI } from '@/lib/ai-client';
-
-const result = await callAI(
-  [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: userMessage },
-  ],
-  { model: 'primary' }  // uses LLM_MODEL_PRIMARY from env
-);
-
-// app/api/ai/create-pr/route.ts
-const prBody = await callAI(
-  [{ role: 'user', content: prPrompt }],
-  { model: 'fast' }     // uses LLM_MODEL_FAST from env
-);
-
-// app/api/ai/agent/route.ts
-const agentResult = await callAI(
-  [{ role: 'user', content: complexPrompt }],
-  { model: 'agent' }    // uses LLM_MODEL_AGENT from env
-);
-```
-
 ---
 
 ## UI Component Checklist
 
-| Component | File | Priority |
-|---|---|---|
-| `<StepProgress />` | `components/StepProgress.tsx` | High |
-| `<RepoCard />` | `components/RepoCard.tsx` | High |
-| `<BranchSelector />` | `components/BranchSelector.tsx` | High |
-| `<AIChat />` | `components/AIChat.tsx` | High |
-| `<DiffViewer />` | `components/DiffViewer.tsx` | High |
-| `<PRResultCard />` | `components/PRResultCard.tsx` | High |
-| `<FileTree />` | `components/FileTree.tsx` | Medium |
-| `<SetupInfoCard />` | `components/SetupInfoCard.tsx` | Medium |
-| `<ConnectGitCard />` | `components/ConnectGitCard.tsx` | Medium |
-| `<LoadingSkeleton />` | `components/LoadingSkeleton.tsx` | Low |
+| Component | File | Phase | Priority |
+|---|---|---|---|
+| `<StepProgress />` | `components/StepProgress.tsx` | Phase 1 | 🔴 High |
+| `<ConnectGitCard />` | `components/ConnectGitCard.tsx` | Phase 1 | 🔴 High |
+| `<RepoCard />` | `components/RepoCard.tsx` | Phase 1 | 🔴 High |
+| `<BranchSelector />` | `components/BranchSelector.tsx` | Phase 2 | 🔴 High |
+| `<SetupInfoCard />` | `components/SetupInfoCard.tsx` | Phase 2 | 🔴 High |
+| `<AIChat />` | `components/AIChat.tsx` | Phase 2 | 🔴 High |
+| `<DiffViewer />` | `components/DiffViewer.tsx` | Phase 2 | 🔴 High |
+| `<PRResultCard />` | `components/PRResultCard.tsx` | Phase 3 | 🔴 High |
+| `<FileTree />` | `components/FileTree.tsx` | Phase 2 | 🟡 Medium |
+| `<LoadingSkeleton />` | `components/LoadingSkeleton.tsx` | Phase 4 | 🟢 Low |
 
 ---
 
 ## Risk Management
 
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| GROQ returns invalid JSON | Medium | Add retry logic + fallback error message |
-| GitHub API rate limiting | Low | Cache repo data, show friendly error |
-| WebContainer setup too complex | High | Skip it — use diff view instead |
-| Supabase RLS blocks queries | Medium | Test with service role key first, then add RLS |
-| OAuth callback URL mismatch | High | Double-check callback URLs in GitHub app settings |
-| AI changes break syntax | Medium | Show raw diff and let user accept/reject |
-| File too large for GROQ context | Medium | Truncate to first 200 lines, show warning |
+| Risk | Phase | Likelihood | Mitigation |
+|---|---|---|---|
+| GROQ returns invalid JSON | Phase 2 | Medium | Add retry logic + fallback error message |
+| GitHub API rate limiting | Phase 1–3 | Low | Cache repo data, show friendly error |
+| WebContainer setup too complex | Phase 2 | High | Skip it — use diff view instead ✅ |
+| Supabase RLS blocks queries | Phase 1 | Medium | Test with service role key first, then add RLS |
+| OAuth callback URL mismatch | Phase 1 | High | Double-check callback URLs in GitHub app settings |
+| AI changes break syntax | Phase 2 | Medium | Show raw diff and let user accept/reject |
+| File too large for AI context | Phase 2 | Medium | Truncate to first 200 lines, show warning |
+| Deploy env vars missing | Phase 4 | High | Use checklist above — verify each one after deploy |
 
 ### The Golden Rule for Hackathons
 
 > **A working end-to-end flow beats a broken fancy feature every time.**
 >
-> Priority order: Auth ✅ → Git connection ✅ → AI edit ✅ → Push ✅ → PR ✅ → Pretty UI
+> Priority order: `Phase 1` ✅ → `Phase 2` ✅ → `Phase 3` ✅ → `Phase 4` ✅
 >
-> If WebContainers are taking too long, skip them. If GitLab OAuth is broken, demo with GitHub only. Keep the core flow working and polished.
+> If WebContainers are too complex → skip them. If GitLab OAuth is broken → demo with GitHub only. Keep the core flow working and polished.
 
 ---
 
 ## Quick Reference — Page Routes
 
 ```
-/                           → Landing page (no auth required)
-/login                      → Login — email + password only
-/signup                     → Sign up — email + password only
-/auth/callback              → Supabase auth callback (email confirm)
+/                             → Landing page (no auth required)
+/login                        → Login — email + password ONLY
+/signup                       → Sign up — email + password ONLY
+/auth/callback                → Supabase auth callback (email confirm)
 
-/dashboard                  → Main dashboard — repos grid
-                              (shows "Connect Git" empty state if no connection)
-/dashboard/repo/[id]        → Repo detail + branch selector
-/dashboard/repo/[id]/edit   → AI editor (3-panel layout)
-/dashboard/repo/[id]/pr     → PR result page
+/dashboard                    → Main dashboard
+                                (shows "Connect Git" empty state if no connection)
+/dashboard/repo/[id]          → Repo detail + branch selector
+/dashboard/repo/[id]/edit     → AI editor — 3-panel layout
+/dashboard/repo/[id]/pr       → PR result page
 
-/api/auth/github            → GitHub OAuth callback (repo access — dashboard only)
-/api/auth/gitlab            → GitLab OAuth callback (repo access — dashboard only)
-/api/git/*                  → Git operations (repos, branches, push, PR)
-/api/ai/*                   → AI operations (parse, modify, commit msg, PR desc)
+/api/auth/github              → GitHub OAuth callback (repo access — Phase 1)
+/api/auth/gitlab              → GitLab OAuth callback (repo access — Phase 1)
+/api/git/*                    → Git operations (Phase 1, Phase 3)
+/api/ai/*                     → AI operations (Phase 2, Phase 3)
 ```
 
-> ⚠️ **Note:** `/api/auth/github` and `/api/auth/gitlab` are Git repo access callbacks, NOT login callbacks. They are triggered only from the "Connect GitHub/GitLab" buttons inside `/dashboard`.
+> ⚠️ `/api/auth/github` and `/api/auth/gitlab` are **repo access callbacks only**, triggered from dashboard. They are NOT login callbacks.
 
 ---
 
-## 📝 CHANGELOG
+## 📝 Changelog
 
 All notable changes to the project setup and documentation are recorded here.
 Update this section every time you add a new env variable, dependency, or architectural decision.
@@ -1314,19 +1416,21 @@ Update this section every time you add a new env variable, dependency, or archit
 | v1.1 | Day 0 | Added `LLM_PROVIDER` — swap between GROQ and NVIDIA via env only |
 | v1.2 | Day 0 | Added `LLM_MODEL_PRIMARY`, `LLM_MODEL_FAST`, `LLM_MODEL_AGENT` — model per task type |
 | v1.3 | Day 0 | Added `LLM_MAX_TOKENS_*` and `LLM_TEMPERATURE` — fine-tune without code changes |
-| v1.4 | Day 0 | Created `lib/ai-client.ts` — unified provider-agnostic AI client used across all routes |
+| v1.4 | Day 0 | Created `lib/ai-client.ts` — unified provider-agnostic AI client |
 | v1.5 | Day 0 | Created `.env.sample` and `.env.local` as separate tracked/untracked files |
-| v1.6 | Day 0 | **Auth clarification** — Login/Signup is email+password only via Supabase. GitHub/GitLab OAuth is strictly for repo access inside the dashboard, not for login. Updated flow diagram, Hour 1–2, Hour 2–3, dashboard layout, and page routes accordingly. |
+| v1.6 | Day 0 | Auth clarification — email+password only for login; GitHub/GitLab OAuth is repo access only from dashboard |
+| v1.7 | Day 0 | **Restructured into 4 phases** — Phase 1 Foundation, Phase 2 Core AI, Phase 3 Git Automation, Phase 4 Ship It. Added phase labels to all API routes, components, risk table, and done-when checklists per hour. |
 
 ### How to Update This Changelog
 
-When you add a new env variable:
+When you add a new env variable or make an architectural change:
 1. Add it to `.env.sample` with documentation comments
 2. Add the blank key to `.env.local`
 3. Add a row to this changelog table
-4. Update the Quick Reference table in the [Environment Variables](#environment-variables) section
+4. Update the Quick Reference env table in the [Environment Variables](#environment-variables) section
 
 ---
 
 *Built for Hackathon — Good luck! 🏆*
 *Stack: Next.js 14 + Supabase + GROQ / NVIDIA AI + GitHub/GitLab API*
+*4 Phases · 10 Steps · 12 Hours*
