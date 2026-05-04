@@ -59,9 +59,10 @@ export function DashboardClient({ connections }: DashboardClientProps) {
   }, []);
 
   useEffect(() => {
-    if (activeConnection) {
-      fetchRepos(activeConnection);
-    }
+    if (!activeConnection) return;
+    queueMicrotask(() => {
+      void fetchRepos(activeConnection);
+    });
   }, [activeConnection, fetchRepos]);
 
   const hasConnections = connections.length > 0;

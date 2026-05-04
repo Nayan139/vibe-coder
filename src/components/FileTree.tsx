@@ -196,9 +196,10 @@ export function FileTree({
     }
   }, [connectionId, repoFullName, branch]);
 
-  // Load on mount
   useEffect(() => {
-    fetchRoot();
+    queueMicrotask(() => {
+      void fetchRoot();
+    });
   }, [fetchRoot]);
 
   if (loading) {
