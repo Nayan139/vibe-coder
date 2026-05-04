@@ -11,10 +11,21 @@ interface PRResultCardProps {
   prNumber: number;
   newBranch: string;
   baseBranch: string;
+  /** Defaults to GitHub copy / link label. */
+  provider?: "github" | "gitlab";
   onStartNew: () => void;
 }
 
-export function PRResultCard({ prUrl, prTitle, prNumber, newBranch, baseBranch, onStartNew }: PRResultCardProps) {
+export function PRResultCard({
+  prUrl,
+  prTitle,
+  prNumber,
+  newBranch,
+  baseBranch,
+  provider = "github",
+  onStartNew,
+}: PRResultCardProps) {
+  const isGitLab = provider === "gitlab";
   return (
     <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
       <CardContent className="pt-6 pb-5">
@@ -23,7 +34,9 @@ export function PRResultCard({ prUrl, prTitle, prNumber, newBranch, baseBranch, 
             <CheckCircle2 className="w-6 h-6 text-green-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-green-900 text-lg mb-1">Pull Request Created!</h3>
+            <h3 className="font-bold text-green-900 text-lg mb-1">
+              {isGitLab ? "Merge Request Created!" : "Pull Request Created!"}
+            </h3>
             <div className="flex items-center gap-2 mb-3">
               <GitPullRequest className="w-4 h-4 text-green-600 shrink-0" />
               <span className="text-sm text-green-800 font-medium truncate">{prTitle}</span>
@@ -43,7 +56,7 @@ export function PRResultCard({ prUrl, prTitle, prNumber, newBranch, baseBranch, 
                 className="bg-green-600 hover:bg-green-700 text-white gap-2"
               >
                 <ExternalLink className="w-4 h-4" />
-                View PR on GitHub
+                {isGitLab ? "View MR on GitLab" : "View PR on GitHub"}
               </Button>
               <Button onClick={onStartNew} variant="outline" className="gap-2 border-green-300 text-green-700 hover:bg-green-50">
                 <PlusCircle className="w-4 h-4" />

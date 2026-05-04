@@ -65,29 +65,74 @@ Return the modified files as JSON.`;
     const fenceMatch = clean.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (fenceMatch) clean = fenceMatch[1].trim();
 
-    const changes = JSON.parse(clean);
+    const changes = JSON.parse(clean) as unknown;
+    if (
+      typeof changes !== "object" ||
+      changes === null ||
+      Array.isArray(changes) ||
+      Object.keys(changes as object).length === 0
+    ) {
+      return NextResponse.json(
+        { success: false, error: "AI returned an empty or invalid changes object." },
+        { status: 502 }
+      );
+    }
 
-    // Save chat messages to Supabase if sessionId provided
+    const changeMap = changes as Record<string, string>;
+    for (const v of Object.values(changeMap)) {
+      if (typeof v !== "string") {
+        return NextResponse.json(
+          { success: false, error: "AI returned non-string file contents." },
+          { status: 502 }
+        );
+      }
+    }
+
+    const assistantSummary = `I've made the following changes:\n${Object.keys(changeMap)
+      .map((f) => `- ${f}`)
+      .join("\n")}`;
+
+    let resolvedSessionId: string | undefined;
+
     if (sessionId) {
       await supabase.from("chat_messages").insert([
         { session_id: sessionId, role: "user", content: prompt },
-        {
-          session_id: sessionId,
-          role: "assistant",
-          content: `I've made the following changes:\n${Object.keys(changes)
-            .map((f) => `- ${f}`)
-            .join("\n")}`,
-        },
+        { session_id: sessionId, role: "assistant", content: assistantSummary },
       ]);
 
-      await supabase
+      const { error: updErr } = await supabase
         .from("ai_sessions")
-        .update({ status: "done", changes })
+        .update({ status: "done", changes: changeMap, prompt })
         .eq("id", sessionId)
         .eq("user_id", user.id);
+
+      if (updErr) console.error("ai_sessions update:", updErr);
+      else resolvedSessionId = sessionId;
+    } else {
+      const { data: newSession, error: insErr } = await supabase
+        .from("ai_sessions")
+        .insert({
+          user_id: user.id,
+          prompt,
+          status: "done",
+          changes: changeMap,
+          project_id: null,
+        })
+        .select("id")
+        .single();
+
+      if (insErr) {
+        console.error("ai_sessions insert:", insErr);
+      } else if (newSession?.id) {
+        resolvedSessionId = newSession.id;
+        await supabase.from("chat_messages").insert([
+          { session_id: newSession.id, role: "user", content: prompt },
+          { session_id: newSession.id, role: "assistant", content: assistantSummary },
+        ]);
+      }
     }
 
-    return NextResponse.json({ success: true, changes });
+    return NextResponse.json({ success: true, changes: changeMap, sessionId: resolvedSessionId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "AI modification failed";
     console.error("AI modify error:", err);

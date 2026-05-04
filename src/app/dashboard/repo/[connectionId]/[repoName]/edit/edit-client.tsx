@@ -25,7 +25,6 @@ interface EditClientProps {
   repoFullName: string;
   branch: string;
   provider: string;
-  userId: string;
 }
 
 type Step = "edit" | "review" | "push" | "done";
@@ -34,9 +33,10 @@ interface PRResult {
   prUrl: string;
   prTitle: string;
   prNumber: number;
+  provider: "github" | "gitlab";
 }
 
-export function EditClient({ connectionId, repoFullName, branch, provider, userId }: EditClientProps) {
+export function EditClient({ connectionId, repoFullName, branch, provider }: EditClientProps) {
   const router = useRouter();
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
 
@@ -56,11 +56,12 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
   const [lastPrompt, setLastPrompt] = useState("");
 
   // Push / PR state
-  const [branchName, setBranchName] = useState(`ai-changes-${Date.now()}`);
+  const [branchName, setBranchName] = useState(() => `ai-changes-${Date.now()}`);
   const [pushing, setPushing] = useState(false);
   const [creatingPR, setCreatingPR] = useState(false);
   const [pushedBranch, setPushedBranch] = useState<string | null>(null);
   const [prResult, setPRResult] = useState<PRResult | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const loadedFiles = new Set(Object.keys(fileContents));
   const stepNumber = step === "edit" ? 4 : step === "review" ? 5 : 6;
@@ -172,6 +173,9 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
         return;
       }
 
+      if (typeof data.sessionId === "string") setSessionId(data.sessionId);
+      else setSessionId(null);
+
       const aiChanges: Record<string, string> = data.changes;
       const changedPaths = Object.keys(aiChanges);
 
@@ -211,6 +215,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
 
   function handleDiscardChanges() {
     setChanges({});
+    setSessionId(null);
     setStep("edit");
     setMessages((prev) => [
       ...prev,
@@ -225,6 +230,11 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
       return;
     }
 
+    if (!changes || Object.keys(changes).length === 0) {
+      toast.error("No changes to push. Apply AI changes first.");
+      return;
+    }
+
     // Step 1: Generate commit message
     setPushing(true);
     let commitMessage = `feat: AI-powered changes — ${lastPrompt.slice(0, 50)}`;
@@ -232,11 +242,15 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
       const cmRes = await fetch("/api/ai/commit-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes, userPrompt: lastPrompt }),
+        body: JSON.stringify({ changes, userPrompt: lastPrompt || "AI edits" }),
       });
       if (cmRes.ok) {
         const cmData = await cmRes.json();
-        commitMessage = cmData.message || commitMessage;
+        if (typeof cmData.message === "string") commitMessage = cmData.message;
+      } else if (cmRes.status === 401) {
+        toast.error("Session expired. Please sign in again.");
+        setPushing(false);
+        return;
       }
     } catch {
       // Use fallback commit message
@@ -254,6 +268,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
           newBranch: branchName.trim(),
           changes,
           commitMessage,
+          ...(sessionId ? { sessionId } : {}),
         }),
       });
 
@@ -287,19 +302,31 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
           baseBranch: branch,
           newBranch: branchName.trim(),
           changes,
-          userPrompt: lastPrompt,
+          userPrompt: lastPrompt || "AI-powered changes",
+          ...(sessionId ? { sessionId } : {}),
         }),
       });
 
       const prData = await prRes.json();
 
       if (!prRes.ok || !prData.success) {
-        toast.error(prData.error ?? "PR creation failed.");
+        const err = prData.error ?? "PR creation failed.";
+        toast.error(err);
+        if (pushedBranch) {
+          toast.message("Branch was pushed", {
+            description: `Your branch "${pushedBranch}" is on the remote. You can open a PR/MR manually if needed.`,
+          });
+        }
         setCreatingPR(false);
         return;
       }
 
-      setPRResult({ prUrl: prData.prUrl, prTitle: prData.prTitle, prNumber: prData.prNumber });
+      setPRResult({
+        prUrl: prData.prUrl,
+        prTitle: prData.prTitle,
+        prNumber: prData.prNumber,
+        provider: prData.provider === "gitlab" ? "gitlab" : "github",
+      });
       setStep("done");
       toast.success("Pull Request created!");
     } catch {
@@ -315,6 +342,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
     setStep("edit");
     setPRResult(null);
     setPushedBranch(null);
+    setSessionId(null);
     setBranchName(`ai-changes-${Date.now()}`);
     setLastPrompt("");
   }
@@ -409,6 +437,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider, userI
             prNumber={prResult.prNumber}
             newBranch={pushedBranch ?? branchName}
             baseBranch={branch}
+            provider={prResult.provider}
             onStartNew={handleStartNew}
           />
         </div>

@@ -34,7 +34,6 @@ export default async function EditPage({ params, searchParams }: PageProps) {
       repoFullName={decodedRepo}
       branch={selectedBranch}
       provider={connection.provider}
-      userId={user.id}
     />
   );
 }

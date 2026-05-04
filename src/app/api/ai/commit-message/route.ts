@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import { callAI } from "@/lib/ai-client";
 
 export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { changes: Record<string, string>; userPrompt: string };
   try {
     body = await request.json();
@@ -10,7 +17,7 @@ export async function POST(request: Request) {
   }
 
   const { changes, userPrompt } = body;
-  if (!changes || !userPrompt) {
+  if (!changes || typeof changes !== "object" || !userPrompt) {
     return NextResponse.json({ error: "changes and userPrompt are required" }, { status: 400 });
   }
 
