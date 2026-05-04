@@ -3,6 +3,7 @@
 import { useRef, useEffect } from "react";
 import { Send, Loader2, Bot, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AIThinkingSkeleton } from "@/components/LoadingSkeleton";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -58,7 +59,7 @@ export function AIChat({ messages, prompt, onPromptChange, onSubmit, loading, di
               {[
                 "Change the hero title color to blue",
                 "Add a loading spinner to the button",
-                "Update the footer copyright year to 2025",
+                "Update the footer copyright year to 2026",
               ].map((example) => (
                 <button
                   key={example}
@@ -96,16 +97,7 @@ export function AIChat({ messages, prompt, onPromptChange, onSubmit, loading, di
           ))
         )}
 
-        {loading && (
-          <div className="flex gap-3 justify-start">
-            <div className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center shrink-0 mt-0.5">
-              <Bot className="w-4 h-4 text-violet-600" />
-            </div>
-            <div className="bg-gray-100 px-3 py-2.5 rounded-xl rounded-bl-sm">
-              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-            </div>
-          </div>
-        )}
+        {loading && <AIThinkingSkeleton />}
 
         <div ref={bottomRef} />
       </div>

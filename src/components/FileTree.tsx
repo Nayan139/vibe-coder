@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { ChevronRight, ChevronDown, Folder, FolderOpen, FileCode, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FileTreeSkeleton } from "@/components/LoadingSkeleton";
 
 interface GitFileItem {
   name: string;
@@ -202,9 +203,12 @@ export function FileTree({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-4 text-sm text-gray-400">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Loading files...
+      <div className="py-2">
+        <p className="px-3 pb-2 text-xs text-gray-400 flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+          Loading file tree…
+        </p>
+        <FileTreeSkeleton />
       </div>
     );
   }

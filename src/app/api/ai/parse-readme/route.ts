@@ -30,11 +30,19 @@ export async function POST(request: Request) {
     );
 
     const clean = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
+    const parsed = JSON.parse(clean) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return NextResponse.json({
+        install: "npm install",
+        start: "npm run dev",
+        notes: "Could not parse README automatically.",
+      });
+    }
+    const o = parsed as Record<string, unknown>;
     return NextResponse.json({
-      install: parsed.install ?? "npm install",
-      start: parsed.start ?? "npm run dev",
-      notes: parsed.notes ?? "",
+      install: typeof o.install === "string" ? o.install : "npm install",
+      start: typeof o.start === "string" ? o.start : "npm run dev",
+      notes: typeof o.notes === "string" ? o.notes : "",
     });
   } catch (err) {
     console.error("README parse error:", err);

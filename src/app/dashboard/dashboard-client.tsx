@@ -48,6 +48,9 @@ export function DashboardClient({ connections }: DashboardClientProps) {
       }
       const data: Repo[] = await res.json();
       setRepos(data);
+      if (data.length > 0) {
+        toast.success(`Loaded ${data.length} repositor${data.length === 1 ? "y" : "ies"}.`);
+      }
     } catch {
       toast.error("Network error while fetching repositories.");
     } finally {
@@ -71,7 +74,7 @@ export function DashboardClient({ connections }: DashboardClientProps) {
 
   if (!hasConnections) {
     return (
-      <div className="px-8 py-10">
+      <div className="px-4 sm:px-6 md:px-8 py-8 md:py-10">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-500 mt-1">Connect your Git account to get started.</p>
@@ -82,7 +85,7 @@ export function DashboardClient({ connections }: DashboardClientProps) {
   }
 
   return (
-    <div className="px-8 py-10">
+    <div className="px-4 sm:px-6 md:px-8 py-8 md:py-10">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Your Repositories</h1>
         <p className="text-gray-500 mt-1">
@@ -152,9 +155,12 @@ export function DashboardClient({ connections }: DashboardClientProps) {
           <p className="text-sm mt-1">Try a different search term.</p>
         </div>
       ) : repos.length === 0 && !loading ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="font-medium">No repositories found.</p>
-          <p className="text-sm mt-1">Make sure you have repositories in your account.</p>
+        <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
+          <p className="font-medium text-gray-600">No repositories found.</p>
+          <p className="text-sm mt-2">
+            Try <strong>Refresh</strong>, connect the other provider, or confirm your Git account has repos you can
+            access.
+          </p>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

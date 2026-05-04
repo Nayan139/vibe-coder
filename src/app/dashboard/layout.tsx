@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardSidebar } from "./sidebar";
 import { ConnectionToast } from "./connection-toast";
+import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 
 export default async function DashboardLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const supabase = await createClient();
@@ -18,11 +19,11 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
   return (
     <div className="flex min-h-screen bg-gray-50">
       <DashboardSidebar user={user} connections={connections ?? []} />
-      <main className="flex-1 min-w-0 overflow-auto">
+      <main className="flex-1 min-w-0 overflow-auto min-h-0">
         <Suspense>
           <ConnectionToast />
         </Suspense>
-        {children}
+        <DashboardErrorBoundary>{children}</DashboardErrorBoundary>
       </main>
     </div>
   );

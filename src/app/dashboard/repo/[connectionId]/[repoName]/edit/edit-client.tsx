@@ -350,7 +350,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Top bar */}
-      <header className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white shrink-0">
+      <header className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 border-b border-gray-200 bg-white shrink-0">
         <Button
           variant="ghost"
           size="sm"
@@ -377,14 +377,14 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
           </Badge>
         </div>
 
-        <div className="ml-auto">
+        <div className="w-full sm:w-auto sm:ml-auto flex justify-start sm:justify-end min-w-0 overflow-x-auto pb-0.5">
           <StepProgress currentStep={stepNumber} />
         </div>
       </header>
 
       {/* Push / PR Banner */}
       {step === "push" && (
-        <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 shrink-0">
+        <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-5 py-3 shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
             <GitPullRequest className="w-4 h-4 text-amber-600 shrink-0" />
             <span className="text-sm font-medium text-amber-800">Ready to push!</span>
@@ -430,7 +430,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
 
       {/* PR Done Banner */}
       {step === "done" && prResult && (
-        <div className="px-5 py-4 bg-green-50 border-b border-green-200 shrink-0">
+        <div className="px-4 sm:px-5 py-4 bg-green-50 border-b border-green-200 shrink-0">
           <PRResultCard
             prUrl={prResult.prUrl}
             prTitle={prResult.prTitle}
@@ -443,10 +443,10 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
         </div>
       )}
 
-      {/* Three-panel editor */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Three-panel editor — stack on small screens, row on xl+ */}
+      <div className="flex flex-col xl:flex-row flex-1 min-h-0 overflow-hidden">
         {/* Left: File Tree */}
-        <aside className="w-60 shrink-0 border-r border-gray-200 bg-white overflow-y-auto flex flex-col">
+        <aside className="w-full xl:w-60 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col min-h-0 max-h-[34vh] xl:max-h-none overflow-hidden">
           <div className="px-3 pt-3 pb-2 border-b border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
               Files
@@ -471,7 +471,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
         </aside>
 
         {/* Center: AI Chat */}
-        <div className="flex-1 min-w-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col overflow-hidden max-h-[40vh] xl:max-h-none">
           <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">AI Chat</p>
             {Object.keys(fileContents).length > 0 && (
@@ -493,7 +493,7 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
         </div>
 
         {/* Right: Diff Preview */}
-        <div className="w-[45%] shrink-0 bg-white flex flex-col overflow-hidden">
+        <div className="w-full xl:w-[45%] xl:max-w-[50%] xl:shrink-0 bg-white flex flex-col min-h-0 flex-1 overflow-hidden">
           <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Diff Preview</p>
           </div>
