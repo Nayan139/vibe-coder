@@ -11,8 +11,8 @@ import { buildGitCloneUrl, detectPreviewPort } from "@/lib/preview-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Streaming SSE: install (≤15 min) + dev-server wait (≤4 min) + buffer.
-export const maxDuration = 1500;
+// Vercel Hobby enforces max 300s for Serverless Functions.
+export const maxDuration = 300;
 
 type StreamBody = {
   previewKey?: string;
