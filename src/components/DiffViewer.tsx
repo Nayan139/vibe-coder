@@ -36,7 +36,7 @@ function LazyDiffPanel({ original, changed }: { original: string; changed: strin
 
   if (!lib) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
+      <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
         Loading diff viewer…
       </div>
     );
@@ -90,11 +90,11 @@ export function DiffViewer({
   if (changedPaths.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-12 px-6">
-        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-          <FileCode className="w-6 h-6 text-gray-400" />
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
+          <FileCode className="h-6 w-6 text-slate-400" />
         </div>
-        <h3 className="font-semibold text-gray-600 mb-1">Diff Preview</h3>
-        <p className="text-sm text-gray-400">
+        <h3 className="font-semibold text-slate-600 mb-1">Diff Preview</h3>
+        <p className="text-sm text-slate-400">
           AI changes will appear here. Type a prompt and send it to see the diff.
         </p>
       </div>
@@ -107,7 +107,7 @@ export function DiffViewer({
   return (
     <div className="flex flex-col h-full">
       {/* File tabs */}
-      <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-gray-100 overflow-x-auto shrink-0">
+      <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-slate-100 overflow-x-auto shrink-0">
         {changedPaths.map((path) => {
           const fileName = path.split("/").pop() ?? path;
           const newFile = isNew(path);
@@ -116,10 +116,10 @@ export function DiffViewer({
             <button
               key={path}
               onClick={() => setActiveFile(path)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                 activeFile === path
-                  ? "bg-violet-100 text-violet-700"
-                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  ? "bg-rose-50 text-rose-600"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
               }`}
             >
               {envFile ? (
@@ -153,7 +153,7 @@ export function DiffViewer({
                 Will NOT be committed to git
               </span>
             </div>
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="text-xs text-slate-500 mb-3">
               Fill in your actual values. This file is only used for local preview (WebContainer).
             </p>
             <EnvEditor content={changedFiles[activeFile] ?? ""} />
@@ -170,7 +170,7 @@ export function DiffViewer({
 
       {/* Apply / Discard */}
       {showActions && onApply && onDiscard && (
-        <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0 bg-white">
+        <div className="border-t border-slate-100 px-4 py-3 flex items-center gap-3 shrink-0 bg-white">
           <Button onClick={onApply} className="bg-green-600 hover:bg-green-700 text-white gap-2 flex-1">
             <CheckCircle2 className="w-4 h-4" />
             Apply Changes

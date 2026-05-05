@@ -40,7 +40,6 @@ export function CommitPanel({
       return;
     }
 
-    // Step 1: commit message
     setStatus("commitmsg");
     let commitMessage = `feat: AI-powered changes — ${lastPrompt.slice(0, 50)}`;
     try {
@@ -54,10 +53,8 @@ export function CommitPanel({
         if (typeof cmData.message === "string") commitMessage = cmData.message;
       }
     } catch {
-      // use fallback
     }
 
-    // Step 2: push
     setStatus("pushing");
     try {
       const pushRes = await fetch("/api/git/push", {
@@ -86,7 +83,6 @@ export function CommitPanel({
       return;
     }
 
-    // Step 3: create PR
     setStatus("pr");
     try {
       const prRes = await fetch("/api/git/create-pr", {
@@ -129,7 +125,7 @@ export function CommitPanel({
           href={prUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 text-blue-600 text-sm underline"
+          className="flex items-center gap-1 text-rose-600 text-sm underline"
         >
           View Pull Request <ExternalLink className="w-3 h-3" />
         </a>
@@ -140,39 +136,37 @@ export function CommitPanel({
   const isWorking = status !== "idle";
 
   return (
-    <div className="border-t pt-3 mt-2 space-y-3">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-gray-800">Ready to commit?</p>
-        <span className="text-xs text-gray-400">{changedPaths.length} file{changedPaths.length !== 1 ? "s" : ""} changed</span>
+        <p className="text-sm font-semibold text-slate-800">Ready to commit?</p>
+        <span className="text-xs text-slate-400">{changedPaths.length} file{changedPaths.length === 1 ? "" : "s"} changed</span>
       </div>
 
-      {/* Changed files summary */}
       <div className="flex flex-wrap gap-1">
         {changedPaths.map((path) => (
           <span
             key={path}
-            className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
+            className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full"
           >
             {path.split("/").pop()}
           </span>
         ))}
       </div>
 
-      {/* Branch name */}
       <div>
-        <label className="text-xs text-gray-500 mb-1 block">Branch name</label>
+        <label className="text-xs text-slate-500 mb-1 block">Branch name</label>
         <input
           value={branchName}
           onChange={(e) => setBranchName(e.target.value)}
           disabled={isWorking}
-          className="w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-400 disabled:opacity-50"
+          className="w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-rose-400/30 focus:border-rose-300 disabled:opacity-50"
         />
       </div>
 
       <button
         onClick={handleCommit}
         disabled={isWorking}
-        className="w-full bg-green-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-2"
+        className="cursor-pointer w-full bg-linear-to-r from-rose-500 to-amber-400 text-white py-2 rounded-lg text-sm font-semibold hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
       >
         {isWorking ? (
           <>

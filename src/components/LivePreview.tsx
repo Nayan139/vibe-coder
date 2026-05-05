@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert, ExternalLink } from "lucide-react";
+import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { mountProjectFiles, startDevServer, teardownWebContainer, updateFileInContainer } from "@/lib/webcontainer";
@@ -135,19 +135,47 @@ export function LivePreview({
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [iframeKey, setIframeKey] = useState(0);
+  const [initialPreviewHttpStatus, setInitialPreviewHttpStatus] = useState<number | null>(null);
 
   const previousEditedRef = useRef<Record<string, string>>({});
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const didAutoReloadRef = useRef(false);
+
+  const reloadIframe = useCallback(() => setIframeKey((k) => k + 1), []);
+
+  // addLog must be declared before any effect that references it.
+  const addLog = useCallback((line: string) => {
+    const cleaned = stripAnsi(line);
+    if (!cleaned) return;
+    setLogs((prev) => [...prev.slice(-149), cleaned]);
+    const m = /Public preview URL responded \(HTTP (\d+)\)/.exec(cleaned);
+    if (m) setInitialPreviewHttpStatus(Number.parseInt(m[1], 10));
+  }, []);
 
   // Plain HTML projects (no package.json) don't support HMR — reload the iframe after sync.
   const isPlainHtmlProject = !workspaceFiles["package.json"] && !editedFiles["package.json"];
 
   useEffect(() => {
-    if (status !== "ready" || !isPlainHtmlProject) return;
-    if (syncStatus === "done" && iframeRef.current) {
-      iframeRef.current.contentWindow?.location.reload();
-    }
-  }, [syncStatus, isPlainHtmlProject, status]);
+    if (status !== "ready" || !isPlainHtmlProject || syncStatus !== "done") return;
+    const t = setTimeout(reloadIframe, 0);
+    return () => clearTimeout(t);
+  }, [syncStatus, isPlainHtmlProject, status, reloadIframe]);
+
+  // Always auto-reload the iframe once after E2B preview becomes ready.
+  // Next.js dev mode may return HTTP 200 with blank content while still compiling
+  // on first request — waiting 5 s gives the compiler time to finish.
+  useEffect(() => {
+    if (status !== "ready" || engine !== "e2b" || !previewUrl) return;
+    if (didAutoReloadRef.current) return;
+    const delay = initialPreviewHttpStatus !== null && initialPreviewHttpStatus >= 500 ? 4000 : 5000;
+    const timer = setTimeout(() => {
+      didAutoReloadRef.current = true;
+      addLog("Auto-refreshing preview after initial compile…");
+      reloadIframe();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [status, engine, previewUrl, initialPreviewHttpStatus, addLog, reloadIframe]);
 
   const mergedForWebContainer = useMemo(
     () => ({ ...workspaceFiles, ...editedFiles }),
@@ -178,12 +206,6 @@ export function LivePreview({
     };
   }, []);
 
-  const addLog = useCallback((line: string) => {
-    const cleaned = stripAnsi(line);
-    if (!cleaned) return;
-    setLogs((prev) => [...prev.slice(-149), cleaned]);
-  }, []);
-
   async function fetchProjectEnvContent(): Promise<string> {
     if (!projectId) return "";
     try {
@@ -200,6 +222,8 @@ export function LivePreview({
     setPreviewUrl("");
     setErrorMessage("");
     setStatus("booting");
+    didAutoReloadRef.current = false;
+    setInitialPreviewHttpStatus(null);
     previousEditedRef.current = { ...editedFiles };
     let sawReady = false;
     let sawError = false;
@@ -332,6 +356,8 @@ export function LivePreview({
             return;
           }
           for (const [path] of updates) addLog(`Pushed ${path} to cloud preview`);
+          addLog("Synced — refreshing preview…");
+          setTimeout(reloadIframe, 2500);
         })
         .catch(() => addLog("Hot update request failed."));
     } else {
@@ -344,14 +370,14 @@ export function LivePreview({
     }
 
     previousEditedRef.current = { ...prev, ...editedFiles };
-  }, [addLog, connectionId, editedFiles, engine, previewKey, status]);
+  }, [addLog, connectionId, editedFiles, engine, previewKey, reloadIframe, status]);
 
   const canToggleEngine = e2bAvailable === true && simple;
 
   if (engine === null || e2bAvailable === null) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500">
-        <Loader2 className="h-6 w-6 animate-spin text-violet-600" />
+      <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        <Loader2 className="h-6 w-6 animate-spin text-rose-500" />
         Preparing preview…
       </div>
     );
@@ -371,12 +397,12 @@ export function LivePreview({
             : "";
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">Live Preview</span>
+          <span className="text-sm font-medium text-slate-700">Live Preview</span>
           {e2bAvailable && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-slate-400">
               {engine === "e2b" ? "Cloud (E2B)" : "Browser"}
             </span>
           )}
@@ -413,7 +439,7 @@ export function LivePreview({
 
         <div className="flex items-center gap-2">
           {!e2bAvailable && (
-            <span className="hidden text-xs text-gray-400 sm:inline">
+            <span className="hidden text-xs text-slate-400 sm:inline">
               Add E2B_API_KEY for cloud preview
             </span>
           )}
@@ -441,10 +467,16 @@ export function LivePreview({
           )}
 
           {status === "ready" && (
-            <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="h-8 gap-1">
-              <RotateCcw className="h-3.5 w-3.5" />
-              Hard Restart
-            </Button>
+            <>
+              <Button size="sm" onClick={reloadIframe} variant="outline" className="h-8 gap-1">
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
+              <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="h-8 gap-1">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Hard Restart
+              </Button>
+            </>
           )}
 
           {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
@@ -457,7 +489,7 @@ export function LivePreview({
       </div>
 
       {showLogs && (
-        <div className="h-36 overflow-y-auto border-b border-gray-100 bg-slate-950 p-3 font-mono text-xs text-green-300">
+        <div className="h-36 overflow-y-auto border-b border-slate-100 bg-slate-950 p-3 font-mono text-xs text-green-300">
           {logs.length === 0 ? (
             <p className="text-slate-400">
               {engine === "e2b"
@@ -470,29 +502,29 @@ export function LivePreview({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 bg-gray-50">
+      <div className="min-h-0 flex-1 bg-slate-50">
         {status === "ready" && previewUrl ? (
-          <iframe ref={iframeRef} src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
+          <iframe key={iframeKey} ref={iframeRef} src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-gray-500">
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-slate-500">
             {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
               <>
-                <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
                 <p className="text-sm">{loadingMessage || "Working…"}</p>
                 {(status === "booting" || status === "installing") && engine === "e2b" && (
-                  <p className="text-xs text-gray-400">First cloud run often takes 1–3 minutes.</p>
+                  <p className="text-xs text-slate-400">First cloud run often takes 1–3 minutes.</p>
                 )}
               </>
             )}
 
             {status === "idle" && (
               <>
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-slate-700">
                   {engine === "e2b" ? "Run the repo in a cloud sandbox" : "Run the project in your browser"}
                 </p>
-                <p className="max-w-sm text-xs text-gray-500">
-                  Install: <code className="text-gray-700">{installCommand}</code> · Start:{" "}
-                  <code className="text-gray-700">{startCommand}</code>
+                <p className="max-w-sm text-xs text-slate-500">
+                  Install: <code className="text-slate-700">{installCommand}</code> · Start:{" "}
+                  <code className="text-slate-700">{startCommand}</code>
                 </p>
                 {!e2bAvailable && (
                   <p className="text-xs text-amber-700">
@@ -505,7 +537,7 @@ export function LivePreview({
             {status === "error" && (
               <>
                 <p className="text-sm font-medium text-red-600">Preview failed</p>
-                <p className="max-w-md text-xs text-gray-600">{errorMessage}</p>
+                <p className="max-w-md text-xs text-slate-600">{errorMessage}</p>
               </>
             )}
           </div>

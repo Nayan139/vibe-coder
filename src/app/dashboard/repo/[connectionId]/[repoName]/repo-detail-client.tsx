@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, GitBranch, Package, Play, Loader2, ChevronDown, Code2 } from "lucide-react";
+import { ArrowLeft, GitBranch, Package, Play, Loader2, ChevronDown, FolderGit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StepProgress } from "@/components/StepProgress";
 import { RunCommandsCard } from "@/components/RunCommandsCard";
@@ -34,25 +33,19 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
   const [setupInfo, setSetupInfo] = useState<SetupInfo | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
-  // Track user-overridable commands separately from the AI-parsed defaults
   const [installCmd, setInstallCmd] = useState("npm install");
   const [startCmd, setStartCmd] = useState("npm run dev");
 
-  // Project record (get-or-create when branch + README loads)
   const [projectId, setProjectId] = useState<string | null>(null);
 
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
 
-  // Load project record FIRST (sequential), then parse README.
-  // This ensures DB-saved custom commands always take priority over AI-parsed README values.
   const loadReadmeForBranch = useCallback(
     async (branch: string) => {
       if (!branch) return;
       setLoadingReadme(true);
       setSetupInfo(null);
 
-      // Step 1: fetch or create the project record synchronously so we know
-      // whether the user already saved custom run commands.
       let savedInstall: string | null = null;
       let savedStart: string | null = null;
       try {
@@ -72,26 +65,19 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
             setProjectId(projData.projectId);
             savedInstall = projData.installCommand ?? null;
             savedStart = projData.runCommand ?? null;
-            // Apply DB-saved commands immediately — they win over README values.
             if (savedInstall) setInstallCmd(savedInstall);
             if (savedStart) setStartCmd(savedStart);
           }
         }
       } catch {
-        // non-critical — project persistence is best-effort
+        // non-critical
       }
 
-      // Step 2: fetch README and parse with AI for display + fallback commands.
       try {
         const fileRes = await fetch("/api/git/files", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connectionId,
-            repo: repoFullName,
-            branch,
-            filePath: "README.md",
-          }),
+          body: JSON.stringify({ connectionId, repo: repoFullName, branch, filePath: "README.md" }),
         });
 
         if (!fileRes.ok) {
@@ -99,7 +85,6 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
           toast.info(errBody.error ?? "README not available — using default setup hints.");
           const defaults = { install: "npm install", start: "npm run dev", notes: "No README found." };
           setSetupInfo(defaults);
-          // Only fall back to defaults when no DB-saved commands exist
           if (!savedInstall) setInstallCmd(defaults.install);
           if (!savedStart) setStartCmd(defaults.start);
           return;
@@ -148,7 +133,6 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
           notes: typeof parsed.notes === "string" ? parsed.notes : "",
         };
         setSetupInfo(info);
-        // Only use README-parsed values when no custom commands are saved in DB
         if (!savedInstall) setInstallCmd(info.install);
         if (!savedStart) setStartCmd(info.start);
       } catch {
@@ -224,144 +208,151 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
   }
 
   return (
-    <div className="px-4 sm:px-6 md:px-8 py-8 md:py-10 max-w-3xl mx-auto">
-      <StepProgress currentStep={3} />
-
-      <div className="flex items-center gap-3 mb-6 md:mb-8">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")} className="gap-2 text-gray-500">
-          <ArrowLeft className="w-4 h-4" />
-          Repositories
-        </Button>
+    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-0 md:py-10">
+      {/* Step progress */}
+      <div className="mb-8">
+        <StepProgress currentStep={3} />
       </div>
 
-      <div className="flex items-start gap-4 mb-6 md:mb-8">
-        <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-          <Code2 className="w-6 h-6 text-violet-600" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words">{repoName}</h1>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <Badge variant="secondary" className="text-xs capitalize">
-              {provider}
-            </Badge>
-            <span className="text-sm text-gray-500">{username}</span>
-            <span className="text-gray-300 hidden sm:inline">·</span>
-            <span className="text-sm text-gray-500 font-mono truncate max-w-full sm:max-w-md block sm:inline">
-              {repoFullName}
-            </span>
+      {/* Back */}
+      <button
+        type="button"
+        onClick={() => router.push("/dashboard")}
+        className="mb-6 flex cursor-pointer items-center gap-2 text-sm text-slate-500 transition-colors hover:text-rose-600"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to repositories
+      </button>
+
+      {/* Repo header */}
+      <div className="relative mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-rose-500 to-amber-400" />
+        <div className="absolute inset-0 bg-[radial-gradient(500px_circle_at_0%_0%,rgba(244,63,94,0.04),transparent_60%)]" />
+        <div className="relative flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-rose-500 to-amber-400 shadow-sm shadow-rose-200">
+            <FolderGit2 className="h-5 w-5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="wrap-break-word text-xl font-bold text-slate-900 sm:text-2xl">{repoName}</h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="text-xs capitalize">{provider}</Badge>
+              <span className="text-sm text-slate-500">{username}</span>
+              <span className="hidden text-slate-300 sm:inline">·</span>
+              <code className="block text-xs text-slate-400 sm:inline">{repoFullName}</code>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Branch selector */}
-      <Card className="mb-6">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-violet-600" />
-            Select Branch
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loadingBranches ? (
-            <BranchSelectorSkeleton />
-          ) : branches.length === 0 ? (
-            <div className="text-sm text-gray-500 py-2">
-              <p className="font-medium text-gray-700">No branches available</p>
-              <p className="mt-1 text-xs text-gray-400">
-                Check repository permissions or try another repo from the dashboard.
-              </p>
-            </div>
-          ) : (
-            <div className="relative w-full max-w-sm">
-              <button
-                type="button"
-                onClick={() => setDropdownOpen((v) => !v)}
-                className="flex items-center justify-between w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm hover:border-violet-300 transition-colors"
-              >
-                <span className="flex items-center gap-2 min-w-0">
-                  <GitBranch className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <span className="truncate">{selectedBranch || "Select a branch"}</span>
-                </span>
-                <ChevronDown
-                  className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {dropdownOpen && (
-                <div className="absolute z-50 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+      <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <GitBranch className="h-4 w-4 text-rose-500" />
+          Select Branch
+        </div>
+
+        {loadingBranches ? (
+          <BranchSelectorSkeleton />
+        ) : branches.length === 0 ? (
+          <div className="py-2 text-sm">
+            <p className="font-medium text-slate-700">No branches available</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Check repository permissions or try another repo from the dashboard.
+            </p>
+          </div>
+        ) : (
+          <div className="relative max-w-sm">
+            <button
+              type="button"
+              onClick={() => setDropdownOpen((v) => !v)}
+              className="flex w-full cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all duration-200 hover:border-rose-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400/20"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <GitBranch className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="truncate">{selectedBranch || "Select a branch"}</span>
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {dropdownOpen && (
+              <div className="absolute top-full z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
+                <div className="max-h-60 overflow-y-auto">
                   {branches.map((branch) => (
                     <button
                       type="button"
                       key={branch}
                       onClick={() => void handleBranchSelect(branch)}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-violet-50 hover:text-violet-700 transition-colors ${
-                        selectedBranch === branch ? "bg-violet-50 text-violet-700 font-medium" : "text-gray-700"
+                      className={`flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${
+                        selectedBranch === branch
+                          ? "bg-rose-50 font-medium text-rose-700"
+                          : "text-slate-700 hover:bg-slate-50"
                       }`}
                     >
-                      <GitBranch className="w-3 h-3 inline mr-2 text-gray-400" />
+                      <GitBranch className="h-3 w-3 shrink-0 text-slate-400" />
                       {branch}
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-          {!loadingBranches && selectedBranch && branches.length > 0 && (
-            <p className="text-xs text-gray-400 mt-2">
-              Open the menu above to switch branches — AI reads that branch&apos;s README.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {loadingReadme && (
-        <Card className="mb-6 border-violet-200 bg-violet-50">
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-3 text-violet-700">
-              <Loader2 className="w-5 h-5 animate-spin shrink-0" />
-              <div>
-                <p className="font-medium text-sm">Reading README…</p>
-                <p className="text-xs text-violet-500 mt-0.5">AI is extracting setup information</p>
               </div>
+            )}
+          </div>
+        )}
+
+        {!loadingBranches && selectedBranch && branches.length > 0 && (
+          <p className="mt-3 text-xs text-slate-400">
+            Open the menu above to switch branches — AI reads that branch&apos;s README.
+          </p>
+        )}
+      </div>
+
+      {/* README loading */}
+      {loadingReadme && (
+        <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50/50 p-5">
+          <div className="flex items-center gap-3 text-rose-700">
+            <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">Reading README…</p>
+              <p className="mt-0.5 text-xs text-rose-500">AI is extracting project setup information</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* AI-parsed setup info */}
       {setupInfo && !loadingReadme && (
-        <Card className="mb-6 border-green-200 bg-green-50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2 text-green-800">
-              <Package className="w-4 h-4" />
-              Project Setup Info
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
+          <div className="mb-3.5 flex items-center gap-2 text-sm font-semibold text-emerald-800">
+            <Package className="h-4 w-4" />
+            Project Setup Info
+          </div>
+          <div className="space-y-2.5">
             <div className="flex items-start gap-3">
-              <span className="text-xs font-semibold text-green-700 w-14 shrink-0 mt-0.5">Install</span>
-              <code className="text-sm bg-white px-2 py-0.5 rounded border border-green-200 text-gray-700 font-mono flex-1 break-all">
+              <span className="mt-0.5 w-14 shrink-0 text-xs font-semibold text-emerald-700">Install</span>
+              <code className="flex-1 break-all rounded-lg border border-emerald-200 bg-white px-3 py-1.5 font-mono text-sm text-slate-700">
                 {setupInfo.install}
               </code>
             </div>
             <div className="flex items-start gap-3">
-              <span className="text-xs font-semibold text-green-700 w-14 shrink-0 mt-0.5">Start</span>
-              <code className="text-sm bg-white px-2 py-0.5 rounded border border-green-200 text-gray-700 font-mono flex-1 break-all">
+              <span className="mt-0.5 w-14 shrink-0 text-xs font-semibold text-emerald-700">Start</span>
+              <code className="flex-1 break-all rounded-lg border border-emerald-200 bg-white px-3 py-1.5 font-mono text-sm text-slate-700">
                 {setupInfo.start}
               </code>
             </div>
             {setupInfo.notes && (
               <div className="flex items-start gap-3">
-                <span className="text-xs font-semibold text-green-700 w-14 shrink-0 mt-0.5">Notes</span>
-                <p className="text-sm text-green-800 flex-1">{setupInfo.notes}</p>
+                <span className="mt-0.5 w-14 shrink-0 text-xs font-semibold text-emerald-700">Notes</span>
+                <p className="flex-1 text-sm text-emerald-800">{setupInfo.notes}</p>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
-      {/* Editable run commands override (Phase 5) */}
+      {/* Editable run commands */}
       {setupInfo && !loadingReadme && (
-        <div className="mb-6">
+        <div className="mb-5">
           <RunCommandsCard
             projectId={projectId ?? undefined}
             initialInstall={installCmd}
@@ -374,25 +365,26 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         </div>
       )}
 
-      {/* ENV Variable Manager — Step 10 */}
+      {/* ENV vars */}
       {projectId && !loadingReadme && (
         <div className="mb-6">
           <EnvVarsCard projectId={projectId} />
         </div>
       )}
 
+      {/* CTA */}
       <Button
         size="lg"
         onClick={handleStartEditing}
         disabled={!selectedBranch || loadingBranches || loadingReadme || branches.length === 0}
-        className="w-full bg-violet-600 hover:bg-violet-700 text-white gap-2"
+        className="h-12 w-full cursor-pointer gap-2 border-0 bg-linear-to-r from-rose-500 to-amber-400 text-base font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:opacity-90 hover:shadow-xl hover:shadow-rose-200/60 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
       >
-        <Play className="w-4 h-4" />
+        <Play className="h-4 w-4" />
         Start Editing with AI
       </Button>
 
       {!selectedBranch && !loadingBranches && branches.length > 0 && (
-        <p className="text-center text-sm text-gray-400 mt-3">Select a branch above to continue.</p>
+        <p className="mt-3 text-center text-sm text-slate-400">Select a branch above to continue.</p>
       )}
     </div>
   );

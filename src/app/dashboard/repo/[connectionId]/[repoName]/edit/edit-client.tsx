@@ -448,27 +448,27 @@ export function EditClient({
   );
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50/20">
       {/* Top bar */}
-      <header className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 border-b border-gray-200 bg-white shrink-0">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-sm sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
           size="sm"
           onClick={() =>
             router.push(`/dashboard/repo/${connectionId}/${encodeURIComponent(repoFullName)}`)
           }
-          className="gap-2 text-gray-500 h-8"
+          className="h-8 cursor-pointer gap-2 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
 
-        <div className="w-px h-5 bg-gray-200 mx-1" />
+        <div className="w-px h-5 bg-slate-200 mx-1" />
 
         <div className="flex items-center gap-2 min-w-0">
-          <FolderGit2 className="w-4 h-4 text-gray-400 shrink-0" />
-          <span className="text-sm font-medium text-gray-700 truncate">{repoName}</span>
-          <div className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
+          <FolderGit2 className="w-4 h-4 text-slate-400 shrink-0" />
+          <span className="text-sm font-medium text-slate-700 truncate">{repoName}</span>
+          <div className="flex items-center gap-1 text-xs text-slate-400 shrink-0">
             <GitBranch className="w-3 h-3" />
             <span>{branch}</span>
           </div>
@@ -478,17 +478,17 @@ export function EditClient({
         </div>
 
         {hasAccumulatedChanges && (
-          <div className="flex items-center gap-1 text-xs text-green-600 font-medium shrink-0">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+          <div className="flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-600">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
             {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} accumulated
           </div>
         )}
 
         {loadingFile && (
-          <Loader2 className="w-4 h-4 animate-spin text-violet-500 shrink-0" />
+          <Loader2 className="h-4 w-4 animate-spin shrink-0 text-rose-500" />
         )}
 
-        <div className="w-full sm:w-auto sm:ml-auto flex justify-start sm:justify-end min-w-0 overflow-x-auto pb-0.5">
+        <div className="w-full sm:w-auto sm:ml-auto flex justify-start sm:justify-end min-w-0 sm:min-w-[320px] lg:min-w-115">
           <StepProgress currentStep={stepNumber} />
         </div>
       </header>
@@ -496,10 +496,10 @@ export function EditClient({
       {/* Three-panel editor */}
       <div className="flex flex-col xl:flex-row flex-1 min-h-0 overflow-hidden">
         {/* Left: File Tree */}
-        <aside className="w-full xl:w-60 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col min-h-0 max-h-[34vh] xl:max-h-none overflow-hidden">
-          <div className="px-3 pt-3 pb-2 border-b border-gray-100 shrink-0">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Files</p>
-            <p className="text-xs text-gray-400 mt-0.5">Click to add as context</p>
+        <aside className="w-full xl:w-60 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white flex flex-col min-h-0 max-h-[34vh] xl:max-h-none overflow-hidden">
+          <div className="px-3 pt-3 pb-2 border-b border-slate-100 shrink-0">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files</p>
+            <p className="text-xs text-slate-400 mt-0.5">Click to add as context</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             <FileTree
@@ -515,7 +515,7 @@ export function EditClient({
         </aside>
 
         {/* Center: AI Chat */}
-        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col overflow-hidden max-h-[50vh] xl:max-h-none">
+        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white flex flex-col overflow-hidden max-h-[50vh] xl:max-h-none">
           <div className="flex-1 overflow-hidden">
             <AIChat
               messages={messages}
@@ -550,13 +550,13 @@ export function EditClient({
         {/* Right: Diff Preview */}
         <div className="w-full xl:w-[45%] xl:max-w-[50%] xl:shrink-0 bg-white flex flex-col min-h-0 flex-1 overflow-hidden">
           <Tabs defaultValue="diff" className="flex h-full flex-col overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
+            <div className="px-4 pt-3 pb-2 border-b border-slate-100 shrink-0 flex items-center justify-between">
               <TabsList variant="line">
                 <TabsTrigger value="diff">Diff View</TabsTrigger>
                 <TabsTrigger value="preview">Live Preview</TabsTrigger>
               </TabsList>
               {hasAccumulatedChanges && step !== "review" && (
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-slate-400">
                   {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} changed total
                 </span>
               )}
