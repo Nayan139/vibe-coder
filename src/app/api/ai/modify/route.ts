@@ -229,7 +229,7 @@ Return the modified files as JSON.`;
           status: "active",
           changes: allChanges,
           accumulated_changes: allChanges,
-          project_id: null,
+          project_id: projectId ?? null,
           llm_provider: overrideProvider ?? null,
           llm_model: overrideModel ?? null,
         })

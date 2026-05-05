@@ -339,15 +339,46 @@ export function EditClient({
     toast.info("Changes discarded.");
   }
 
+  function handleDiscardAllChanges() {
+    setLatestChanges({});
+    setAccumulatedChanges({});
+    setStep("edit");
+    toast.info("All accumulated changes were discarded.");
+  }
+
   // ── New chat ──────────────────────────────────────────────────────────────
-  function handleNewChat() {
+  async function createNewSession(): Promise<string | null> {
+    if (!projectId) return null;
+    try {
+      const res = await fetch("/api/sessions/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as { success?: boolean; sessionId?: string };
+      if (data.success && typeof data.sessionId === "string") return data.sessionId;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleNewChat() {
     setMessages([]);
     setLatestChanges({});
     setAccumulatedChanges({});
     setSelectedFiles([]);
     setLastPrompt("");
-    setSessionId(null);
     setStep("edit");
+
+    const freshSessionId = await createNewSession();
+    setSessionId(freshSessionId);
+
+    if (!freshSessionId && projectId) {
+      toast.warning("Started new chat locally, but session creation failed. It will be created on next prompt.");
+      return;
+    }
     toast.info("Started a new chat session. File contents are still loaded.");
   }
 
@@ -467,6 +498,7 @@ export function EditClient({
               lastPrompt={lastPrompt}
               sessionId={sessionId}
               onCommitSuccess={handleCommitSuccess}
+              onDiscardAllChanges={handleDiscardAllChanges}
             />
           </div>
         </div>

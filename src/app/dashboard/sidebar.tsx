@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -16,6 +17,8 @@ import {
   Code2,
   Plus,
   User,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 function GithubIcon({ className }: Readonly<{ className?: string }>) {
@@ -48,6 +51,7 @@ const NAV_LINKS = [
 export function DashboardSidebar({ user, connections }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [collapsed, setCollapsed] = useState(false);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -61,15 +65,29 @@ export function DashboardSidebar({ user, connections }: SidebarProps) {
   const gitlabConnection = connections.find((c) => c.provider === "gitlab");
 
   return (
-    <aside className="w-64 shrink-0 border-r border-gray-200 bg-white flex flex-col h-screen sticky top-0">
+    <aside
+      className={`shrink-0 border-r border-gray-200 bg-white flex flex-col h-screen sticky top-0 transition-all ${
+        collapsed ? "w-20" : "w-64"
+      }`}
+    >
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-gray-100">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-linear-to-br from-violet-600 to-blue-500 flex items-center justify-center">
-            <Code2 className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-base tracking-tight">VibeCode</span>
-        </Link>
+      <div className="px-4 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-linear-to-br from-violet-600 to-blue-500 flex items-center justify-center shrink-0">
+              <Code2 className="w-4 h-4 text-white" />
+            </div>
+            {!collapsed && <span className="font-bold text-base tracking-tight truncate">VibeCode</span>}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="h-7 w-7 rounded-md border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50 flex items-center justify-center shrink-0"
+            title={collapsed ? "Expand panel" : "Collapse panel"}
+          >
+            {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -81,14 +99,16 @@ export function DashboardSidebar({ user, connections }: SidebarProps) {
               key={link.href}
               href={link.href}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                collapsed ? "justify-center" : "gap-3",
                 active
                   ? "bg-violet-50 text-violet-700"
                   : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
               )}
+              title={collapsed ? link.label : undefined}
             >
               <link.icon className="w-4 h-4 shrink-0" />
-              {link.label}
+              {!collapsed && link.label}
             </Link>
           );
         })}
@@ -97,60 +117,74 @@ export function DashboardSidebar({ user, connections }: SidebarProps) {
 
         {/* Git Accounts */}
         <div className="px-3 py-1">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            Git Accounts
-          </p>
+          {!collapsed && (
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Git Accounts
+            </p>
+          )}
 
           {/* GitHub */}
           {githubConnection ? (
-            <div className="flex items-center gap-2 py-2 px-2 rounded-lg bg-gray-50 mb-2">
+            <div className={`flex items-center py-2 px-2 rounded-lg bg-gray-50 mb-2 ${collapsed ? "justify-center" : "gap-2"}`}>
               <GithubIcon className="w-4 h-4 text-gray-700 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-700 truncate">
-                  {githubConnection.username ?? "GitHub"}
-                </p>
-                <Badge className="text-xs bg-green-100 text-green-700 border-0 px-1.5 py-0 h-4">
-                  Connected
-                </Badge>
-              </div>
+              {!collapsed && (
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-700 truncate">
+                    {githubConnection.username ?? "GitHub"}
+                  </p>
+                  <Badge className="text-xs bg-green-100 text-green-700 border-0 px-1.5 py-0 h-4">
+                    Connected
+                  </Badge>
+                </div>
+              )}
             </div>
           ) : (
             <a href="/api/auth/github" className="block mb-2">
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full justify-start gap-2 text-gray-600 border-dashed"
+                className={cn(
+                  "w-full text-gray-600 border-dashed",
+                  collapsed ? "justify-center px-0" : "justify-start gap-2"
+                )}
+                title={collapsed ? "Connect GitHub" : undefined}
               >
                 <Plus className="w-3.5 h-3.5" />
-                Connect GitHub
+                {!collapsed && "Connect GitHub"}
               </Button>
             </a>
           )}
 
           {/* GitLab */}
           {gitlabConnection ? (
-            <div className="flex items-center gap-2 py-2 px-2 rounded-lg bg-gray-50">
+            <div className={`flex items-center py-2 px-2 rounded-lg bg-gray-50 ${collapsed ? "justify-center" : "gap-2"}`}>
               <svg className="w-4 h-4 text-orange-600 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z" />
               </svg>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-700 truncate">
-                  {gitlabConnection.username ?? "GitLab"}
-                </p>
-                <Badge className="text-xs bg-green-100 text-green-700 border-0 px-1.5 py-0 h-4">
-                  Connected
-                </Badge>
-              </div>
+              {!collapsed && (
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-700 truncate">
+                    {gitlabConnection.username ?? "GitLab"}
+                  </p>
+                  <Badge className="text-xs bg-green-100 text-green-700 border-0 px-1.5 py-0 h-4">
+                    Connected
+                  </Badge>
+                </div>
+              )}
             </div>
           ) : (
             <a href="/api/auth/gitlab">
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full justify-start gap-2 text-gray-600 border-dashed"
+                className={cn(
+                  "w-full text-gray-600 border-dashed",
+                  collapsed ? "justify-center px-0" : "justify-start gap-2"
+                )}
+                title={collapsed ? "Connect GitLab" : undefined}
               >
                 <Plus className="w-3.5 h-3.5" />
-                Connect GitLab
+                {!collapsed && "Connect GitLab"}
               </Button>
             </a>
           )}
@@ -159,23 +193,29 @@ export function DashboardSidebar({ user, connections }: SidebarProps) {
 
       {/* User + sign out */}
       <div className="px-3 py-4 border-t border-gray-100 space-y-2">
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-gray-50">
+        <div className={`flex items-center px-2 py-2 rounded-lg bg-gray-50 ${collapsed ? "justify-center" : "gap-3"}`}>
           <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-blue-400 flex items-center justify-center shrink-0">
             <User className="w-4 h-4 text-white" />
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-700 truncate">{user.email}</p>
-            <p className="text-xs text-gray-400">Free plan</p>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-700 truncate">{user.email}</p>
+              <p className="text-xs text-gray-400">Free plan</p>
+            </div>
+          )}
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={handleSignOut}
-          className="w-full justify-start gap-2 text-gray-500 hover:text-red-600 hover:bg-red-50"
+          className={cn(
+            "w-full text-gray-500 hover:text-red-600 hover:bg-red-50",
+            collapsed ? "justify-center px-0" : "justify-start gap-2"
+          )}
+          title={collapsed ? "Sign out" : undefined}
         >
           <LogOut className="w-4 h-4" />
-          Sign out
+          {!collapsed && "Sign out"}
         </Button>
       </div>
     </aside>

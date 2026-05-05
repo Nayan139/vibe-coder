@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Send, Loader2, Bot, User, X, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AIThinkingSkeleton } from "@/components/LoadingSkeleton";
@@ -40,6 +40,7 @@ interface AIChatProps {
   lastPrompt?: string;
   sessionId?: string | null;
   onCommitSuccess?: (prUrl: string) => void;
+  onDiscardAllChanges?: () => void;
 }
 
 export function AIChat({
@@ -63,6 +64,7 @@ export function AIChat({
   lastPrompt,
   sessionId,
   onCommitSuccess,
+  onDiscardAllChanges,
 }: AIChatProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -75,6 +77,7 @@ export function AIChat({
     connectionId &&
     repoFullName &&
     onCommitSuccess;
+  const [confirmDiscardAll, setConfirmDiscardAll] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -184,6 +187,29 @@ export function AIChat({
       {/* Commit panel — shown when there are accumulated changes */}
       {showCommitPanel && (
         <div className="px-4 pb-1 shrink-0">
+          {onDiscardAllChanges && (
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!confirmDiscardAll) {
+                    setConfirmDiscardAll(true);
+                    setTimeout(() => setConfirmDiscardAll(false), 3000);
+                    return;
+                  }
+                  onDiscardAllChanges();
+                  setConfirmDiscardAll(false);
+                }}
+                className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                  confirmDiscardAll
+                    ? "border-red-300 text-red-600 bg-red-50"
+                    : "border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-200"
+                }`}
+              >
+                {confirmDiscardAll ? "Confirm discard all" : "Discard all changes"}
+              </button>
+            </div>
+          )}
           <CommitPanel
             accumulatedChanges={accumulatedChanges!}
             baseBranch={baseBranch!}
