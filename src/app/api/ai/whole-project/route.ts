@@ -175,6 +175,7 @@ export async function POST(request: Request) {
     projectContext?: string;
     sessionId?: string;
     projectId?: string;
+    accumulatedChanges?: Record<string, string>;
     overrideProvider?: string;
     overrideModel?: string;
   };
@@ -187,6 +188,7 @@ export async function POST(request: Request) {
   const {
     prompt, connectionId, repoFullName, branch,
     projectContext, sessionId, projectId,
+    accumulatedChanges,
     overrideProvider, overrideModel,
   } = body;
 
@@ -266,6 +268,16 @@ Return ONLY the JSON array. Example: ["src/app/page.tsx", "package.json"]`,
 
     if (Object.keys(fetchedFiles).length === 0) {
       return NextResponse.json({ error: "Could not fetch file contents from repository." }, { status: 502 });
+    }
+
+    // Phase 5 Step 6: always prefer the latest local accumulated session state
+    // so prompts build on prior applied changes (including created files).
+    if (accumulatedChanges && typeof accumulatedChanges === "object") {
+      for (const [filePath, content] of Object.entries(accumulatedChanges)) {
+        if (typeof content === "string") {
+          fetchedFiles[filePath] = content;
+        }
+      }
     }
 
     // ── Pass 2: AI code modification ──────────────────────────────────────────

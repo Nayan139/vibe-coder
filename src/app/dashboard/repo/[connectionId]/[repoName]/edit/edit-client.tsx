@@ -12,7 +12,7 @@ import { LivePreview } from "@/components/LivePreview";
 import { StepProgress } from "@/components/StepProgress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DEFAULT_MODEL, type ModelOption } from "@/lib/models";
+import { DEFAULT_MODEL, MODEL_OPTIONS, type ModelOption } from "@/lib/models";
 
 interface EditClientProps {
   connectionId: string;
@@ -22,6 +22,12 @@ interface EditClientProps {
   installCommand?: string;
   startCommand?: string;
   projectId?: string;
+  initialSessionId?: string | null;
+  initialMessages?: ChatMessage[];
+  initialAccumulatedChanges?: Record<string, string>;
+  initialLastPrompt?: string;
+  initialLlmProvider?: string | null;
+  initialLlmModel?: string | null;
 }
 
 type Step = "edit" | "review" | "done";
@@ -34,6 +40,12 @@ export function EditClient({
   installCommand: _installCommand = "npm install",
   startCommand: _startCommand = "npm run dev",
   projectId,
+  initialSessionId = null,
+  initialMessages = [],
+  initialAccumulatedChanges = {},
+  initialLastPrompt = "",
+  initialLlmProvider = null,
+  initialLlmModel = null,
 }: Readonly<EditClientProps>) {
   const router = useRouter();
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
@@ -48,19 +60,27 @@ export function EditClient({
   const [loadingFile, setLoadingFile] = useState(false);
 
   // ── AI / chat state ───────────────────────────────────────────────────────
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [prompt, setPrompt] = useState("");
   const [generatingAI, setGeneratingAI] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(DEFAULT_MODEL);
+  const initialModelSelection =
+    MODEL_OPTIONS.find(
+      (opt) =>
+        (initialLlmModel ? opt.model === initialLlmModel : false) &&
+        (initialLlmProvider ? opt.provider === initialLlmProvider : true)
+    ) ?? DEFAULT_MODEL;
+  const [selectedModel, setSelectedModel] = useState<ModelOption>(initialModelSelection);
 
   // ── Changes state ─────────────────────────────────────────────────────────
   // latestChanges = what the most recent AI prompt returned (shown in diff during review)
   const [latestChanges, setLatestChanges] = useState<Record<string, string>>({});
   // accumulatedChanges = all approved changes merged across all prompts in this session
-  const [accumulatedChanges, setAccumulatedChanges] = useState<Record<string, string>>({});
-  const [lastPrompt, setLastPrompt] = useState("");
+  const [accumulatedChanges, setAccumulatedChanges] = useState<Record<string, string>>(
+    initialAccumulatedChanges
+  );
+  const [lastPrompt, setLastPrompt] = useState(initialLastPrompt);
   const [step, setStep] = useState<Step>("edit");
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [repoTreePaths, setRepoTreePaths] = useState<string[]>([]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -212,6 +232,7 @@ export function EditClient({
             projectContext: `Repo: ${repoFullName}, Branch: ${branch}`,
             sessionId: sessionId ?? undefined,
             projectId: projectId ?? undefined,
+            accumulatedChanges,
             overrideProvider: selectedModel.provider,
             overrideModel: selectedModel.model,
           }),
