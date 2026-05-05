@@ -76,6 +76,7 @@ export async function POST(request: Request) {
     fileContents: Record<string, string>;
     projectContext?: string;
     sessionId?: string;
+    projectId?: string;
     selectedFiles?: string[];
     overrideProvider?: string;
     overrideModel?: string;
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { prompt, fileContents, projectContext, sessionId, selectedFiles, overrideProvider, overrideModel } = body;
+  const { prompt, fileContents, projectContext, sessionId, projectId, selectedFiles, overrideProvider, overrideModel } = body;
 
   if (!prompt || !fileContents) {
     return NextResponse.json({ error: "prompt and fileContents are required" }, { status: 400 });
@@ -254,6 +255,24 @@ Return the modified files as JSON.`;
           },
         ]);
       }
+    }
+
+    // Persist newly created files to the created_files table (best-effort)
+    if (resolvedSessionId && Object.keys(createdFiles).length > 0) {
+      const isEnvPath = (p: string) => {
+        const base = p.split("/").pop() ?? p;
+        return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
+      };
+      const rows = Object.entries(createdFiles).map(([filePath, content]) => ({
+        session_id: resolvedSessionId,
+        project_id: projectId ?? null,
+        file_path: filePath,
+        content,
+        is_env_file: isEnvPath(filePath),
+        committed: false,
+      }));
+      const { error: cfErr } = await supabase.from("created_files").insert(rows);
+      if (cfErr) console.error("created_files insert:", cfErr.message);
     }
 
     return NextResponse.json({

@@ -37,13 +37,50 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
   const [installCmd, setInstallCmd] = useState("npm install");
   const [startCmd, setStartCmd] = useState("npm run dev");
 
+  // Project record (get-or-create when branch + README loads)
+  const [projectId, setProjectId] = useState<string | null>(null);
+
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
 
+  // Load project record FIRST (sequential), then parse README.
+  // This ensures DB-saved custom commands always take priority over AI-parsed README values.
   const loadReadmeForBranch = useCallback(
     async (branch: string) => {
       if (!branch) return;
       setLoadingReadme(true);
       setSetupInfo(null);
+
+      // Step 1: fetch or create the project record synchronously so we know
+      // whether the user already saved custom run commands.
+      let savedInstall: string | null = null;
+      let savedStart: string | null = null;
+      try {
+        const projRes = await fetch("/api/projects/get-or-create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionId, repoFullName, repoName, branch }),
+        });
+        if (projRes.ok) {
+          const projData = await projRes.json() as {
+            success?: boolean;
+            projectId?: string;
+            runCommand?: string | null;
+            installCommand?: string | null;
+          };
+          if (projData.success && projData.projectId) {
+            setProjectId(projData.projectId);
+            savedInstall = projData.installCommand ?? null;
+            savedStart = projData.runCommand ?? null;
+            // Apply DB-saved commands immediately — they win over README values.
+            if (savedInstall) setInstallCmd(savedInstall);
+            if (savedStart) setStartCmd(savedStart);
+          }
+        }
+      } catch {
+        // non-critical — project persistence is best-effort
+      }
+
+      // Step 2: fetch README and parse with AI for display + fallback commands.
       try {
         const fileRes = await fetch("/api/git/files", {
           method: "POST",
@@ -61,8 +98,9 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
           toast.info(errBody.error ?? "README not available — using default setup hints.");
           const defaults = { install: "npm install", start: "npm run dev", notes: "No README found." };
           setSetupInfo(defaults);
-          setInstallCmd(defaults.install);
-          setStartCmd(defaults.start);
+          // Only fall back to defaults when no DB-saved commands exist
+          if (!savedInstall) setInstallCmd(defaults.install);
+          if (!savedStart) setStartCmd(defaults.start);
           return;
         }
 
@@ -73,8 +111,8 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         if (!exists || !content) {
           const defaults = { install: "npm install", start: "npm run dev", notes: "No README found." };
           setSetupInfo(defaults);
-          setInstallCmd(defaults.install);
-          setStartCmd(defaults.start);
+          if (!savedInstall) setInstallCmd(defaults.install);
+          if (!savedStart) setStartCmd(defaults.start);
           return;
         }
 
@@ -89,8 +127,8 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
           toast.error(errBody.error ?? "Could not parse README with AI.");
           const defaults = { install: "npm install", start: "npm run dev", notes: "Could not parse README." };
           setSetupInfo(defaults);
-          setInstallCmd(defaults.install);
-          setStartCmd(defaults.start);
+          if (!savedInstall) setInstallCmd(defaults.install);
+          if (!savedStart) setStartCmd(defaults.start);
           return;
         }
 
@@ -98,8 +136,8 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         if (!parsed || typeof parsed !== "object") {
           const defaults = { install: "npm install", start: "npm run dev", notes: "Invalid parse response." };
           setSetupInfo(defaults);
-          setInstallCmd(defaults.install);
-          setStartCmd(defaults.start);
+          if (!savedInstall) setInstallCmd(defaults.install);
+          if (!savedStart) setStartCmd(defaults.start);
           return;
         }
 
@@ -109,19 +147,20 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
           notes: typeof parsed.notes === "string" ? parsed.notes : "",
         };
         setSetupInfo(info);
-        setInstallCmd(info.install);
-        setStartCmd(info.start);
+        // Only use README-parsed values when no custom commands are saved in DB
+        if (!savedInstall) setInstallCmd(info.install);
+        if (!savedStart) setStartCmd(info.start);
       } catch {
         toast.error("Failed to fetch or parse README.");
         const defaults = { install: "npm install", start: "npm run dev", notes: "" };
         setSetupInfo(defaults);
-        setInstallCmd(defaults.install);
-        setStartCmd(defaults.start);
+        if (!savedInstall) setInstallCmd(defaults.install);
+        if (!savedStart) setStartCmd(defaults.start);
       } finally {
         setLoadingReadme(false);
       }
     },
-    [connectionId, repoFullName]
+    [connectionId, repoFullName, repoName]
   );
 
   useEffect(() => {
@@ -177,6 +216,7 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
       install: installCmd,
       start: startCmd,
     });
+    if (projectId) params.set("projectId", projectId);
     router.push(
       `/dashboard/repo/${connectionId}/${encodeURIComponent(repoFullName)}/edit?${params.toString()}`
     );
@@ -322,6 +362,7 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
       {setupInfo && !loadingReadme && (
         <div className="mb-6">
           <RunCommandsCard
+            projectId={projectId ?? undefined}
             initialInstall={installCmd}
             initialStart={startCmd}
             onSave={(install, start) => {

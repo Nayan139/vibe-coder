@@ -19,6 +19,7 @@ interface EditClientProps {
   provider: string;
   installCommand?: string;
   startCommand?: string;
+  projectId?: string;
 }
 
 type Step = "edit" | "review" | "done";
@@ -30,6 +31,7 @@ export function EditClient({
   provider,
   installCommand = "npm install",
   startCommand = "npm run dev",
+  projectId,
 }: EditClientProps) {
   const router = useRouter();
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
@@ -185,6 +187,7 @@ export function EditClient({
           fileContents: contextFiles,
           projectContext: `Repo: ${repoFullName}, Branch: ${branch}`,
           sessionId: sessionId ?? undefined,
+          projectId: projectId ?? undefined,
           selectedFiles: selectedFiles.length > 0 ? selectedFiles : undefined,
           overrideProvider: selectedModel.provider,
           overrideModel: selectedModel.model,
