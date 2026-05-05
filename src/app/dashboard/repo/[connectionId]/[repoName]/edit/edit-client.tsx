@@ -3,74 +3,70 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  GitBranch,
-  Loader2,
-  GitPullRequest,
-  X,
-  FolderGit2,
-} from "lucide-react";
+import { ArrowLeft, GitBranch, Loader2, FolderGit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { FileTree } from "@/components/FileTree";
 import { AIChat, type ChatMessage } from "@/components/AIChat";
 import { DiffViewer } from "@/components/DiffViewer";
-import { PRResultCard } from "@/components/PRResultCard";
 import { StepProgress } from "@/components/StepProgress";
 import { Badge } from "@/components/ui/badge";
+import { DEFAULT_MODEL, type ModelOption } from "@/lib/models";
 
 interface EditClientProps {
   connectionId: string;
   repoFullName: string;
   branch: string;
   provider: string;
+  installCommand?: string;
+  startCommand?: string;
 }
 
-type Step = "edit" | "review" | "push" | "done";
+type Step = "edit" | "review" | "done";
 
-interface PRResult {
-  prUrl: string;
-  prTitle: string;
-  prNumber: number;
-  provider: "github" | "gitlab";
-}
-
-export function EditClient({ connectionId, repoFullName, branch, provider }: EditClientProps) {
+export function EditClient({
+  connectionId,
+  repoFullName,
+  branch,
+  provider,
+  installCommand = "npm install",
+  startCommand = "npm run dev",
+}: EditClientProps) {
   const router = useRouter();
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
 
-  // File state
-  const [selectedFile, setSelectedFile] = useState<string | undefined>();
+  // ── File state ────────────────────────────────────────────────────────────
+  // Multi-select: files toggled as chips above the prompt
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  // All loaded file contents (updated with accumulated changes after apply)
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  // Baseline = original GitHub content (never overwritten once set)
+  const [baselineFiles, setBaselineFiles] = useState<Record<string, string>>({});
   const [loadingFile, setLoadingFile] = useState(false);
 
-  // Chat state
+  // ── AI / chat state ───────────────────────────────────────────────────────
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState("");
   const [generatingAI, setGeneratingAI] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<ModelOption>(DEFAULT_MODEL);
 
-  // Changes state
-  const [changes, setChanges] = useState<Record<string, string>>({});
-  const [step, setStep] = useState<Step>("edit");
+  // ── Changes state ─────────────────────────────────────────────────────────
+  // latestChanges = what the most recent AI prompt returned (shown in diff during review)
+  const [latestChanges, setLatestChanges] = useState<Record<string, string>>({});
+  // accumulatedChanges = all approved changes merged across all prompts in this session
+  const [accumulatedChanges, setAccumulatedChanges] = useState<Record<string, string>>({});
   const [lastPrompt, setLastPrompt] = useState("");
-
-  // Push / PR state
-  const [branchName, setBranchName] = useState(() => `ai-changes-${Date.now()}`);
-  const [pushing, setPushing] = useState(false);
-  const [creatingPR, setCreatingPR] = useState(false);
-  const [pushedBranch, setPushedBranch] = useState<string | null>(null);
-  const [prResult, setPRResult] = useState<PRResult | null>(null);
+  const [step, setStep] = useState<Step>("edit");
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // ── Derived ───────────────────────────────────────────────────────────────
   const loadedFiles = new Set(Object.keys(fileContents));
   const stepNumber = step === "edit" ? 4 : step === "review" ? 5 : 6;
+  const hasAccumulatedChanges = Object.keys(accumulatedChanges).length > 0;
 
-  const handleFileSelect = useCallback(
+  // ── File loading ──────────────────────────────────────────────────────────
+  const loadFile = useCallback(
     async (path: string) => {
-      setSelectedFile(path);
       if (fileContents[path] !== undefined) return;
-
       setLoadingFile(true);
       try {
         const res = await fetch("/api/git/files", {
@@ -78,15 +74,18 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ connectionId, repo: repoFullName, branch, filePath: path }),
         });
-
         if (!res.ok) {
-          const err = await res.json();
+          const err = await res.json() as { error?: string };
           toast.error(err.error ?? "Failed to load file");
           return;
         }
-
-        const { content } = await res.json();
+        const { content } = await res.json() as { content?: string };
         setFileContents((prev) => ({ ...prev, [path]: content ?? "" }));
+        // Snapshot original content into baseline (only once)
+        setBaselineFiles((prev) => {
+          if (prev[path] !== undefined) return prev;
+          return { ...prev, [path]: content ?? "" };
+        });
       } catch {
         toast.error("Network error while loading file.");
       } finally {
@@ -96,7 +95,36 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
     [connectionId, repoFullName, branch, fileContents]
   );
 
-  function selectRelevantFiles(userPrompt: string): Record<string, string> {
+  // ── Multi-select toggle ───────────────────────────────────────────────────
+  async function handleToggleFile(path: string) {
+    await loadFile(path);
+    setSelectedFiles((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]
+    );
+  }
+
+  function handleRemoveFile(path: string) {
+    setSelectedFiles((prev) => prev.filter((p) => p !== path));
+  }
+
+  function handleClearAllFiles() {
+    setSelectedFiles([]);
+  }
+
+  // ── Context selection ────────────────────────────────────────────────────
+  // When chips are selected → use exactly those files as context.
+  // When no chips → fall back to keyword-based auto-selection from loaded files.
+  function buildContext(userPrompt: string): Record<string, string> {
+    if (selectedFiles.length > 0) {
+      const ctx: Record<string, string> = {};
+      for (const p of selectedFiles) {
+        // Use accumulated version if available, otherwise original
+        ctx[p] = accumulatedChanges[p] ?? fileContents[p] ?? "";
+      }
+      return ctx;
+    }
+
+    // Auto-selection from loaded files
     const keywords = userPrompt.toLowerCase().split(/\s+/);
     const alwaysInclude = ["package.json", "page.tsx", "layout.tsx", "index.tsx", "app.tsx"];
 
@@ -106,29 +134,24 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
         return keywords.some((kw) => kw.length > 3 && path.toLowerCase().includes(kw));
       })
       .sort(([a], [b]) => {
-        // Prioritise recently selected file
-        if (selectedFile && a === selectedFile) return -1;
-        if (selectedFile && b === selectedFile) return 1;
+        // Prioritise last selected file
+        if (a === selectedFiles[selectedFiles.length - 1]) return -1;
+        if (b === selectedFiles[selectedFiles.length - 1]) return 1;
         return 0;
       });
 
-    // Cap at ~16 000 chars of total context
     let totalChars = 0;
     const selected: Record<string, string> = {};
     for (const [path, content] of relevant) {
-      if (totalChars + content.length > 16000) break;
-      selected[path] = content;
-      totalChars += content.length;
+      const currentContent = accumulatedChanges[path] ?? content;
+      if (totalChars + currentContent.length > 16000) break;
+      selected[path] = currentContent;
+      totalChars += currentContent.length;
     }
-
-    // Always include the currently-selected file if it fits
-    if (selectedFile && fileContents[selectedFile] && !selected[selectedFile]) {
-      selected[selectedFile] = fileContents[selectedFile];
-    }
-
     return selected;
   }
 
+  // ── Send prompt ───────────────────────────────────────────────────────────
   async function handleSendPrompt() {
     if (!prompt.trim() || generatingAI) return;
 
@@ -138,15 +161,15 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setGeneratingAI(true);
 
-    const relevantFiles = selectRelevantFiles(userMessage);
+    const contextFiles = buildContext(userMessage);
 
-    if (Object.keys(relevantFiles).length === 0) {
+    if (Object.keys(contextFiles).length === 0) {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content:
-            "I don't have any file content loaded yet. Please click on some files in the file tree on the left, then try again.",
+            "I don't have any file content loaded yet. Click files in the file tree on the left to load them, then try again.",
         },
       ]);
       setGeneratingAI(false);
@@ -159,12 +182,21 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: userMessage,
-          fileContents: relevantFiles,
+          fileContents: contextFiles,
           projectContext: `Repo: ${repoFullName}, Branch: ${branch}`,
+          sessionId: sessionId ?? undefined,
+          selectedFiles: selectedFiles.length > 0 ? selectedFiles : undefined,
+          overrideProvider: selectedModel.provider,
+          overrideModel: selectedModel.model,
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json() as {
+        success?: boolean;
+        error?: string;
+        changes?: Record<string, string>;
+        sessionId?: string;
+      };
 
       if (!res.ok || !data.success) {
         const errMsg = data.error ?? "AI modification failed. Please try again.";
@@ -174,24 +206,31 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
       }
 
       if (typeof data.sessionId === "string") setSessionId(data.sessionId);
-      else setSessionId(null);
 
-      const aiChanges: Record<string, string> = data.changes;
+      const aiChanges = data.changes ?? {};
       const changedPaths = Object.keys(aiChanges);
 
-      setChanges(aiChanges);
-      // Store originals for diff view
-      const originals: Record<string, string> = {};
-      for (const path of changedPaths) {
-        originals[path] = fileContents[path] ?? "";
-      }
-      setFileContents((prev) => ({ ...prev, ...originals }));
+      // Snapshot baselines for any files we haven't seen before
+      setBaselineFiles((prev) => {
+        const next = { ...prev };
+        for (const path of changedPaths) {
+          if (next[path] === undefined) {
+            next[path] = fileContents[path] ?? "";
+          }
+        }
+        return next;
+      });
+
+      setLatestChanges(aiChanges);
+
+      const assistantContent = `Done! Modified ${changedPaths.length} file${changedPaths.length !== 1 ? "s" : ""}:\n${changedPaths.map((p) => `• ${p}`).join("\n")}\n\nReview the diff on the right, then click "Apply Changes" to add them to your session.`;
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `Done! I've modified ${changedPaths.length} file${changedPaths.length !== 1 ? "s" : ""}:\n${changedPaths.map((p) => `• ${p}`).join("\n")}\n\nCheck the diff preview on the right and click "Apply Changes" to proceed.`,
+          content: assistantContent,
+          changesSnapshot: aiChanges,
         },
       ]);
 
@@ -206,16 +245,19 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
     }
   }
 
+  // ── Apply / Discard ───────────────────────────────────────────────────────
   function handleApplyChanges() {
-    // Merge AI changes into fileContents
-    setFileContents((prev) => ({ ...prev, ...changes }));
-    setStep("push");
-    toast.success("Changes applied! Set a branch name and push.");
+    // Merge latest changes into fileContents (so AI has updated context next prompt)
+    setFileContents((prev) => ({ ...prev, ...latestChanges }));
+    // Merge into accumulated changes
+    setAccumulatedChanges((prev) => ({ ...prev, ...latestChanges }));
+    setLatestChanges({});
+    setStep("edit");
+    toast.success("Changes applied and accumulated. Keep prompting or commit when ready.");
   }
 
   function handleDiscardChanges() {
-    setChanges({});
-    setSessionId(null);
+    setLatestChanges({});
     setStep("edit");
     setMessages((prev) => [
       ...prev,
@@ -224,128 +266,37 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
     toast.info("Changes discarded.");
   }
 
-  async function handlePushAndCreatePR() {
-    if (!branchName.trim()) {
-      toast.error("Branch name cannot be empty.");
-      return;
-    }
-
-    if (!changes || Object.keys(changes).length === 0) {
-      toast.error("No changes to push. Apply AI changes first.");
-      return;
-    }
-
-    // Step 1: Generate commit message
-    setPushing(true);
-    let commitMessage = `feat: AI-powered changes — ${lastPrompt.slice(0, 50)}`;
-    try {
-      const cmRes = await fetch("/api/ai/commit-message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes, userPrompt: lastPrompt || "AI edits" }),
-      });
-      if (cmRes.ok) {
-        const cmData = await cmRes.json();
-        if (typeof cmData.message === "string") commitMessage = cmData.message;
-      } else if (cmRes.status === 401) {
-        toast.error("Session expired. Please sign in again.");
-        setPushing(false);
-        return;
-      }
-    } catch {
-      // Use fallback commit message
-    }
-
-    // Step 2: Push to branch
-    try {
-      const pushRes = await fetch("/api/git/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          connectionId,
-          repoFullName,
-          baseBranch: branch,
-          newBranch: branchName.trim(),
-          changes,
-          commitMessage,
-          ...(sessionId ? { sessionId } : {}),
-        }),
-      });
-
-      const pushData = await pushRes.json();
-
-      if (!pushRes.ok || !pushData.success) {
-        toast.error(pushData.error ?? "Push failed. Please try again.");
-        setPushing(false);
-        return;
-      }
-
-      setPushedBranch(pushData.branch);
-      toast.success(`Branch "${pushData.branch}" created and pushed!`);
-    } catch {
-      toast.error("Network error during push.");
-      setPushing(false);
-      return;
-    }
-
-    setPushing(false);
-
-    // Step 3: Create PR
-    setCreatingPR(true);
-    try {
-      const prRes = await fetch("/api/git/create-pr", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          connectionId,
-          repoFullName,
-          baseBranch: branch,
-          newBranch: branchName.trim(),
-          changes,
-          userPrompt: lastPrompt || "AI-powered changes",
-          ...(sessionId ? { sessionId } : {}),
-        }),
-      });
-
-      const prData = await prRes.json();
-
-      if (!prRes.ok || !prData.success) {
-        const err = prData.error ?? "PR creation failed.";
-        toast.error(err);
-        if (pushedBranch) {
-          toast.message("Branch was pushed", {
-            description: `Your branch "${pushedBranch}" is on the remote. You can open a PR/MR manually if needed.`,
-          });
-        }
-        setCreatingPR(false);
-        return;
-      }
-
-      setPRResult({
-        prUrl: prData.prUrl,
-        prTitle: prData.prTitle,
-        prNumber: prData.prNumber,
-        provider: prData.provider === "gitlab" ? "gitlab" : "github",
-      });
-      setStep("done");
-      toast.success("Pull Request created!");
-    } catch {
-      toast.error("Network error during PR creation.");
-    } finally {
-      setCreatingPR(false);
-    }
-  }
-
-  function handleStartNew() {
-    setChanges({});
+  // ── New chat ──────────────────────────────────────────────────────────────
+  function handleNewChat() {
     setMessages([]);
-    setStep("edit");
-    setPRResult(null);
-    setPushedBranch(null);
-    setSessionId(null);
-    setBranchName(`ai-changes-${Date.now()}`);
+    setLatestChanges({});
+    setAccumulatedChanges({});
+    setSelectedFiles([]);
     setLastPrompt("");
+    setSessionId(null);
+    setStep("edit");
+    toast.info("Started a new chat session. File contents are still loaded.");
   }
+
+  // ── Commit success ────────────────────────────────────────────────────────
+  function handleCommitSuccess(prUrl: string) {
+    setStep("done");
+    toast.success("PR created! View it at: " + prUrl);
+  }
+
+  // ── Diff source ───────────────────────────────────────────────────────────
+  // During review: show baseline vs latestChanges
+  // Otherwise: show baseline vs accumulatedChanges (total delta so far)
+  const diffOriginals =
+    step === "review"
+      ? Object.fromEntries(
+          Object.keys(latestChanges).map((path) => [path, baselineFiles[path] ?? fileContents[path] ?? ""])
+        )
+      : Object.fromEntries(
+          Object.keys(accumulatedChanges).map((path) => [path, baselineFiles[path] ?? ""])
+        );
+
+  const diffChanges = step === "review" ? latestChanges : accumulatedChanges;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -377,109 +328,44 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
           </Badge>
         </div>
 
+        {hasAccumulatedChanges && (
+          <div className="flex items-center gap-1 text-xs text-green-600 font-medium shrink-0">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+            {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} accumulated
+          </div>
+        )}
+
+        {loadingFile && (
+          <Loader2 className="w-4 h-4 animate-spin text-violet-500 shrink-0" />
+        )}
+
         <div className="w-full sm:w-auto sm:ml-auto flex justify-start sm:justify-end min-w-0 overflow-x-auto pb-0.5">
           <StepProgress currentStep={stepNumber} />
         </div>
       </header>
 
-      {/* Push / PR Banner */}
-      {step === "push" && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-5 py-3 shrink-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <GitPullRequest className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="text-sm font-medium text-amber-800">Ready to push!</span>
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <span className="text-xs text-amber-700 shrink-0">Branch name:</span>
-              <Input
-                value={branchName}
-                onChange={(e) => setBranchName(e.target.value)}
-                className="h-7 text-xs font-mono max-w-xs bg-white border-amber-300"
-                placeholder="ai-changes-..."
-              />
-            </div>
-            <Button
-              size="sm"
-              onClick={handlePushAndCreatePR}
-              disabled={pushing || creatingPR}
-              className="bg-amber-600 hover:bg-amber-700 text-white gap-2 shrink-0"
-            >
-              {pushing || creatingPR ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  {pushing ? "Pushing..." : "Creating PR..."}
-                </>
-              ) : (
-                <>
-                  <GitPullRequest className="w-3.5 h-3.5" />
-                  Create Branch & PR
-                </>
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setStep("review")}
-              disabled={pushing || creatingPR}
-              className="h-7 w-7 p-0 text-amber-700"
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* PR Done Banner */}
-      {step === "done" && prResult && (
-        <div className="px-4 sm:px-5 py-4 bg-green-50 border-b border-green-200 shrink-0">
-          <PRResultCard
-            prUrl={prResult.prUrl}
-            prTitle={prResult.prTitle}
-            prNumber={prResult.prNumber}
-            newBranch={pushedBranch ?? branchName}
-            baseBranch={branch}
-            provider={prResult.provider}
-            onStartNew={handleStartNew}
-          />
-        </div>
-      )}
-
-      {/* Three-panel editor — stack on small screens, row on xl+ */}
+      {/* Three-panel editor */}
       <div className="flex flex-col xl:flex-row flex-1 min-h-0 overflow-hidden">
         {/* Left: File Tree */}
         <aside className="w-full xl:w-60 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col min-h-0 max-h-[34vh] xl:max-h-none overflow-hidden">
-          <div className="px-3 pt-3 pb-2 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              Files
-            </p>
-            {loadingFile && (
-              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-violet-500">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Loading...
-              </div>
-            )}
+          <div className="px-3 pt-3 pb-2 border-b border-gray-100 shrink-0">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Files</p>
+            <p className="text-xs text-gray-400 mt-0.5">Click to add as context</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             <FileTree
               connectionId={connectionId}
               repoFullName={repoFullName}
               branch={branch}
-              onFileSelect={handleFileSelect}
-              selectedFile={selectedFile}
+              onToggleFile={handleToggleFile}
+              selectedFiles={selectedFiles}
               loadedFiles={loadedFiles}
             />
           </div>
         </aside>
 
         {/* Center: AI Chat */}
-        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col overflow-hidden max-h-[40vh] xl:max-h-none">
-          <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">AI Chat</p>
-            {Object.keys(fileContents).length > 0 && (
-              <p className="text-xs text-gray-400 mt-0.5">
-                {Object.keys(fileContents).length} file{Object.keys(fileContents).length !== 1 ? "s" : ""} loaded as context
-              </p>
-            )}
-          </div>
+        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col overflow-hidden max-h-[50vh] xl:max-h-none">
           <div className="flex-1 overflow-hidden">
             <AIChat
               messages={messages}
@@ -488,23 +374,47 @@ export function EditClient({ connectionId, repoFullName, branch, provider }: Edi
               onSubmit={handleSendPrompt}
               loading={generatingAI}
               disabled={step === "done"}
+              // Phase 5: multi-select chips
+              selectedFiles={selectedFiles}
+              onRemoveFile={handleRemoveFile}
+              onClearAllFiles={handleClearAllFiles}
+              // Phase 5: model selector
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              // Phase 5: new chat
+              hasAccumulatedChanges={hasAccumulatedChanges}
+              onNewChat={handleNewChat}
+              // Phase 5: commit panel
+              accumulatedChanges={accumulatedChanges}
+              baseBranch={branch}
+              connectionId={connectionId}
+              repoFullName={repoFullName}
+              lastPrompt={lastPrompt}
+              sessionId={sessionId}
+              onCommitSuccess={handleCommitSuccess}
             />
           </div>
         </div>
 
         {/* Right: Diff Preview */}
         <div className="w-full xl:w-[45%] xl:max-w-[50%] xl:shrink-0 bg-white flex flex-col min-h-0 flex-1 overflow-hidden">
-          <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Diff Preview</p>
+          <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              {step === "review" ? "Review Changes" : "Accumulated Diff"}
+            </p>
+            {hasAccumulatedChanges && step !== "review" && (
+              <span className="text-xs text-gray-400">
+                {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} changed total
+              </span>
+            )}
           </div>
           <div className="flex-1 overflow-hidden">
             <DiffViewer
-              originalFiles={Object.fromEntries(
-                Object.keys(changes).map((path) => [path, fileContents[path] ?? ""])
-              )}
-              changedFiles={changes}
-              onApply={handleApplyChanges}
-              onDiscard={handleDiscardChanges}
+              originalFiles={diffOriginals}
+              changedFiles={diffChanges}
+              onApply={step === "review" ? handleApplyChanges : undefined}
+              onDiscard={step === "review" ? handleDiscardChanges : undefined}
+              showActions={step === "review"}
             />
           </div>
         </div>

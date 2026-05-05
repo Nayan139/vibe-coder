@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileCode, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileCode, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileTreeSkeleton } from "@/components/LoadingSkeleton";
 
@@ -16,8 +16,10 @@ interface FileTreeProps {
   connectionId: string;
   repoFullName: string;
   branch: string;
-  onFileSelect: (path: string) => void;
+  onFileSelect?: (path: string) => void;
+  onToggleFile?: (path: string) => void;
   selectedFile?: string;
+  selectedFiles?: string[];
   loadedFiles?: Set<string>;
 }
 
@@ -48,7 +50,9 @@ function FileNode({
   repoFullName,
   branch,
   onFileSelect,
+  onToggleFile,
   selectedFile,
+  selectedFiles,
   loadedFiles,
 }: {
   node: TreeNode;
@@ -56,8 +60,10 @@ function FileNode({
   connectionId: string;
   repoFullName: string;
   branch: string;
-  onFileSelect: (path: string) => void;
+  onFileSelect?: (path: string) => void;
+  onToggleFile?: (path: string) => void;
   selectedFile?: string;
+  selectedFiles?: string[];
   loadedFiles?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -67,7 +73,11 @@ function FileNode({
 
   const handleToggle = useCallback(async () => {
     if (node.type === "file") {
-      onFileSelect(node.path);
+      if (onToggleFile) {
+        onToggleFile(node.path);
+      } else {
+        onFileSelect?.(node.path);
+      }
       return;
     }
 
@@ -91,10 +101,13 @@ function FileNode({
     }
 
     setExpanded((v) => !v);
-  }, [node, expanded, loaded, connectionId, repoFullName, branch, onFileSelect]);
+  }, [node, expanded, loaded, connectionId, repoFullName, branch, onFileSelect, onToggleFile]);
 
-  const isSelected = selectedFile === node.path;
+  const isMultiSelected = selectedFiles ? selectedFiles.includes(node.path) : false;
+  const isSingleSelected = selectedFile === node.path;
+  const isSelected = isMultiSelected || isSingleSelected;
   const isLoaded = loadedFiles?.has(node.path);
+  const multiMode = !!onToggleFile;
 
   return (
     <div>
@@ -103,7 +116,7 @@ function FileNode({
         className={cn(
           "flex items-center gap-1.5 w-full text-left px-2 py-1 rounded text-sm hover:bg-gray-100 transition-colors group",
           isSelected && "bg-violet-100 text-violet-700 hover:bg-violet-100",
-          "text-gray-700"
+          !isSelected && "text-gray-700"
         )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
@@ -125,12 +138,18 @@ function FileNode({
           <>
             <span className="w-3.5 shrink-0" />
             <FileCode
-              className={cn("w-3.5 h-3.5 shrink-0", isLoaded ? "text-violet-500" : "text-gray-400")}
+              className={cn(
+                "w-3.5 h-3.5 shrink-0",
+                isSelected ? "text-violet-600" : isLoaded ? "text-violet-400" : "text-gray-400"
+              )}
             />
           </>
         )}
-        <span className="truncate text-xs">{node.name}</span>
-        {isLoaded && (
+        <span className="truncate text-xs flex-1">{node.name}</span>
+        {node.type === "file" && multiMode && isSelected && (
+          <Check className="w-3 h-3 text-violet-500 shrink-0 ml-auto" />
+        )}
+        {node.type === "file" && !multiMode && isLoaded && !isSelected && (
           <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
         )}
       </button>
@@ -151,7 +170,9 @@ function FileNode({
                 repoFullName={repoFullName}
                 branch={branch}
                 onFileSelect={onFileSelect}
+                onToggleFile={onToggleFile}
                 selectedFile={selectedFile}
+                selectedFiles={selectedFiles}
                 loadedFiles={loadedFiles}
               />
             ))
@@ -167,7 +188,9 @@ export function FileTree({
   repoFullName,
   branch,
   onFileSelect,
+  onToggleFile,
   selectedFile,
+  selectedFiles,
   loadedFiles,
 }: FileTreeProps) {
   const [rootItems, setRootItems] = useState<TreeNode[]>([]);
@@ -227,6 +250,9 @@ export function FileTree({
 
   return (
     <div className="py-2">
+      {onToggleFile && (
+        <p className="px-3 pb-2 text-xs text-gray-400">Click files to add as context</p>
+      )}
       {rootItems.map((node) => (
         <FileNode
           key={node.path}
@@ -236,7 +262,9 @@ export function FileTree({
           repoFullName={repoFullName}
           branch={branch}
           onFileSelect={onFileSelect}
+          onToggleFile={onToggleFile}
           selectedFile={selectedFile}
+          selectedFiles={selectedFiles}
           loadedFiles={loadedFiles}
         />
       ))}

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StepProgress } from "@/components/StepProgress";
+import { RunCommandsCard } from "@/components/RunCommandsCard";
 import { BranchSelectorSkeleton } from "@/components/LoadingSkeleton";
 
 interface SetupInfo {
@@ -31,6 +32,11 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
   const [loadingReadme, setLoadingReadme] = useState(false);
   const [setupInfo, setSetupInfo] = useState<SetupInfo | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  // Track user-overridable commands separately from the AI-parsed defaults
+  const [installCmd, setInstallCmd] = useState("npm install");
+  const [startCmd, setStartCmd] = useState("npm run dev");
+
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
 
   const loadReadmeForBranch = useCallback(
@@ -51,18 +57,24 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         });
 
         if (!fileRes.ok) {
-          const errBody = await fileRes.json().catch(() => ({}));
+          const errBody = await fileRes.json().catch(() => ({})) as { error?: string };
           toast.info(errBody.error ?? "README not available — using default setup hints.");
-          setSetupInfo({ install: "npm install", start: "npm run dev", notes: "No README found." });
+          const defaults = { install: "npm install", start: "npm run dev", notes: "No README found." };
+          setSetupInfo(defaults);
+          setInstallCmd(defaults.install);
+          setStartCmd(defaults.start);
           return;
         }
 
-        const fileJson = await fileRes.json().catch(() => ({}));
+        const fileJson = await fileRes.json().catch(() => ({})) as { content?: string; exists?: boolean };
         const content = typeof fileJson.content === "string" ? fileJson.content : "";
         const exists = fileJson.exists !== false;
 
         if (!exists || !content) {
-          setSetupInfo({ install: "npm install", start: "npm run dev", notes: "No README found." });
+          const defaults = { install: "npm install", start: "npm run dev", notes: "No README found." };
+          setSetupInfo(defaults);
+          setInstallCmd(defaults.install);
+          setStartCmd(defaults.start);
           return;
         }
 
@@ -73,26 +85,38 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         });
 
         if (!parseRes.ok) {
-          const errBody = await parseRes.json().catch(() => ({}));
+          const errBody = await parseRes.json().catch(() => ({})) as { error?: string };
           toast.error(errBody.error ?? "Could not parse README with AI.");
-          setSetupInfo({ install: "npm install", start: "npm run dev", notes: "Could not parse README." });
+          const defaults = { install: "npm install", start: "npm run dev", notes: "Could not parse README." };
+          setSetupInfo(defaults);
+          setInstallCmd(defaults.install);
+          setStartCmd(defaults.start);
           return;
         }
 
-        const parsed = await parseRes.json().catch(() => null);
+        const parsed = await parseRes.json().catch(() => null) as Record<string, string> | null;
         if (!parsed || typeof parsed !== "object") {
-          setSetupInfo({ install: "npm install", start: "npm run dev", notes: "Invalid parse response." });
+          const defaults = { install: "npm install", start: "npm run dev", notes: "Invalid parse response." };
+          setSetupInfo(defaults);
+          setInstallCmd(defaults.install);
+          setStartCmd(defaults.start);
           return;
         }
 
-        setSetupInfo({
+        const info = {
           install: typeof parsed.install === "string" ? parsed.install : "npm install",
           start: typeof parsed.start === "string" ? parsed.start : "npm run dev",
           notes: typeof parsed.notes === "string" ? parsed.notes : "",
-        });
+        };
+        setSetupInfo(info);
+        setInstallCmd(info.install);
+        setStartCmd(info.start);
       } catch {
         toast.error("Failed to fetch or parse README.");
-        setSetupInfo({ install: "npm install", start: "npm run dev", notes: "" });
+        const defaults = { install: "npm install", start: "npm run dev", notes: "" };
+        setSetupInfo(defaults);
+        setInstallCmd(defaults.install);
+        setStartCmd(defaults.start);
       } finally {
         setLoadingReadme(false);
       }
@@ -109,7 +133,7 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
           `/api/git/branches?connectionId=${connectionId}&repo=${encodeURIComponent(repoFullName)}`
         );
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
+          const err = await res.json().catch(() => ({})) as { error?: string };
           toast.error(typeof err.error === "string" ? err.error : "Failed to load branches.");
           setBranches([]);
           return;
@@ -148,8 +172,13 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
       toast.error("Please select a branch first.");
       return;
     }
+    const params = new URLSearchParams({
+      branch: selectedBranch,
+      install: installCmd,
+      start: startCmd,
+    });
     router.push(
-      `/dashboard/repo/${connectionId}/${encodeURIComponent(repoFullName)}/edit?branch=${encodeURIComponent(selectedBranch)}`
+      `/dashboard/repo/${connectionId}/${encodeURIComponent(repoFullName)}/edit?${params.toString()}`
     );
   }
 
@@ -183,6 +212,7 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         </div>
       </div>
 
+      {/* Branch selector */}
       <Card className="mb-6">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -256,6 +286,7 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
         </Card>
       )}
 
+      {/* AI-parsed setup info */}
       {setupInfo && !loadingReadme && (
         <Card className="mb-6 border-green-200 bg-green-50">
           <CardHeader className="pb-3">
@@ -285,6 +316,20 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Editable run commands override (Phase 5) */}
+      {setupInfo && !loadingReadme && (
+        <div className="mb-6">
+          <RunCommandsCard
+            initialInstall={installCmd}
+            initialStart={startCmd}
+            onSave={(install, start) => {
+              setInstallCmd(install);
+              setStartCmd(start);
+            }}
+          />
+        </div>
       )}
 
       <Button

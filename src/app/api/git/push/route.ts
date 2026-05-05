@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 
 const GITLAB_API = "https://gitlab.com/api/v4";
 
+function isEnvFile(filePath: string): boolean {
+  const base = filePath.split("/").pop() ?? filePath;
+  return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
+}
+
 /** Git branch/ref name rules (simplified): no spaces or dangerous chars; max length. */
 function validateBranchName(name: string): string | null {
   const trimmed = name.trim();
@@ -130,6 +135,7 @@ export async function POST(request: Request) {
 
       for (const [filePath, newContent] of Object.entries(changes)) {
         if (typeof newContent !== "string") continue;
+        if (isEnvFile(filePath)) continue; // never push .env files to git
 
         let fileSha: string | undefined;
         try {
@@ -182,6 +188,7 @@ export async function POST(request: Request) {
 
       for (const [filePath, newContent] of Object.entries(changes)) {
         if (typeof newContent !== "string") continue;
+        if (isEnvFile(filePath)) continue; // never push .env files to git
 
         const pathEnc = encodeURIComponent(filePath);
         const getFile = await gitlabJson<{ blob_id?: string }>(

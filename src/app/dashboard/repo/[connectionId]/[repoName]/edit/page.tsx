@@ -4,12 +4,12 @@ import { EditClient } from "./edit-client";
 
 interface PageProps {
   params: Promise<{ connectionId: string; repoName: string }>;
-  searchParams: Promise<{ branch?: string }>;
+  searchParams: Promise<{ branch?: string; install?: string; start?: string }>;
 }
 
 export default async function EditPage({ params, searchParams }: PageProps) {
   const { connectionId, repoName } = await params;
-  const { branch } = await searchParams;
+  const { branch, install, start } = await searchParams;
   const decodedRepo = decodeURIComponent(repoName);
   const selectedBranch = branch ? decodeURIComponent(branch) : "main";
 
@@ -34,6 +34,8 @@ export default async function EditPage({ params, searchParams }: PageProps) {
       repoFullName={decodedRepo}
       branch={selectedBranch}
       provider={connection.provider}
+      installCommand={install ?? "npm install"}
+      startCommand={start ?? "npm run dev"}
     />
   );
 }

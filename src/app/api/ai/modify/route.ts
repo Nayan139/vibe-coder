@@ -6,17 +6,63 @@ import { callAI } from "@/lib/ai-client";
 const SYSTEM_PROMPT = `You are a precise code modification AI.
 The user will describe a UI or code change they want to make.
 You will return ONLY a valid JSON object where:
-- Keys are file paths relative to the repo root
+- Keys are file paths for EXISTING files to modify (e.g. "src/app/page.tsx")
+- For NEW files, prefix the key with "CREATE:" (e.g. "CREATE:.env", "CREATE:src/utils/api.ts")
 - Values are the COMPLETE new file content (not just the changed part)
 
 Rules:
 - Return ONLY valid JSON. No explanation, no markdown, no code blocks.
-- Only include files that actually need to change.
+- Only include files that actually need to change or be created.
 - Preserve all existing functionality unless asked to change it.
 - Keep the same coding style and patterns as the original.
+- For .env files: use placeholder values like YOUR_KEY_HERE, never real secrets.
 
 Example output format:
-{"src/app/page.tsx": "complete file content here", "src/components/hero.tsx": "complete file content here"}`;
+{"src/app/page.tsx": "complete file content here", "CREATE:.env": "API_KEY=YOUR_KEY_HERE"}`;
+
+function processAIChanges(changes: Record<string, string>): {
+  modifiedFiles: Record<string, string>;
+  createdFiles: Record<string, string>;
+} {
+  const modifiedFiles: Record<string, string> = {};
+  const createdFiles: Record<string, string> = {};
+  for (const [key, content] of Object.entries(changes)) {
+    if (key.startsWith("CREATE:")) {
+      createdFiles[key.replace("CREATE:", "")] = content;
+    } else {
+      modifiedFiles[key] = content;
+    }
+  }
+  return { modifiedFiles, createdFiles };
+}
+
+async function formatFile(filePath: string, content: string): Promise<string> {
+  try {
+    const parser =
+      filePath.endsWith(".tsx") || filePath.endsWith(".jsx")
+        ? "babel"
+        : filePath.endsWith(".ts")
+          ? "typescript"
+          : filePath.endsWith(".css")
+            ? "css"
+            : filePath.endsWith(".json")
+              ? "json"
+              : null;
+
+    if (!parser) return content;
+
+    return await prettier.format(content, {
+      parser,
+      semi: true,
+      singleQuote: true,
+      tabWidth: 2,
+      trailingComma: "es5",
+      printWidth: 80,
+    });
+  } catch {
+    return content;
+  }
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -25,14 +71,22 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { prompt: string; fileContents: Record<string, string>; projectContext?: string; sessionId?: string };
+  let body: {
+    prompt: string;
+    fileContents: Record<string, string>;
+    projectContext?: string;
+    sessionId?: string;
+    selectedFiles?: string[];
+    overrideProvider?: string;
+    overrideModel?: string;
+  };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { prompt, fileContents, projectContext, sessionId } = body;
+  const { prompt, fileContents, projectContext, sessionId, selectedFiles, overrideProvider, overrideModel } = body;
 
   if (!prompt || !fileContents) {
     return NextResponse.json({ error: "prompt and fileContents are required" }, { status: 400 });
@@ -58,7 +112,11 @@ Return the modified files as JSON.`;
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userMessage },
       ],
-      { model: isLargeRequest ? "agent" : "primary" }
+      {
+        model: isLargeRequest ? "agent" : "primary",
+        overrideProvider,
+        overrideModel,
+      }
     );
 
     // Strip markdown fences if AI wrapped in them
@@ -89,48 +147,73 @@ Return the modified files as JSON.`;
       }
     }
 
-    const formattedChanges: Record<string, string> = {};
-    for (const [filePath, content] of Object.entries(changeMap)) {
-      try {
-        const parser =
-          filePath.endsWith(".tsx") || filePath.endsWith(".jsx")
-            ? "babel"
-            : filePath.endsWith(".ts")
-              ? "typescript"
-              : filePath.endsWith(".css")
-                ? "css"
-                : filePath.endsWith(".json")
-                  ? "json"
-                  : "babel";
+    // Separate CREATE: prefixed (new files) from modified files
+    const { modifiedFiles, createdFiles } = processAIChanges(changeMap);
 
-        formattedChanges[filePath] = await prettier.format(content as string, {
-          parser,
-          semi: true,
-          singleQuote: true,
-          tabWidth: 2,
-          trailingComma: "es5",
-          printWidth: 80,
-        });
-      } catch {
-        formattedChanges[filePath] = content as string;
-      }
+    // Format modified files with Prettier; skip .env files
+    const formattedModified: Record<string, string> = {};
+    for (const [filePath, content] of Object.entries(modifiedFiles)) {
+      formattedModified[filePath] = await formatFile(filePath, content);
     }
 
-    const assistantSummary = `I've made the following changes:\n${Object.keys(formattedChanges)
-      .map((f) => `- ${f}`)
-      .join("\n")}`;
+    // Combine: modified (formatted) + created (raw, not formatted to preserve .env etc.)
+    const allChanges: Record<string, string> = { ...formattedModified, ...createdFiles };
+
+    const assistantSummary = `I've made the following changes:\n${Object.keys(formattedModified)
+      .map((f) => `• ${f}`)
+      .join("\n")}${
+      Object.keys(createdFiles).length > 0
+        ? `\n\nNew files created:\n${Object.keys(createdFiles)
+            .map((f) => `• ${f} (NEW)`)
+            .join("\n")}`
+        : ""
+    }\n\nCheck the diff preview on the right and click "Apply Changes" to proceed.`;
 
     let resolvedSessionId: string | undefined;
 
     if (sessionId) {
+      // Save chat messages with snapshot of what changed this turn
       await supabase.from("chat_messages").insert([
-        { session_id: sessionId, role: "user", content: prompt },
-        { session_id: sessionId, role: "assistant", content: assistantSummary },
+        {
+          session_id: sessionId,
+          role: "user",
+          content: prompt,
+          selected_files: selectedFiles ?? null,
+        },
+        {
+          session_id: sessionId,
+          role: "assistant",
+          content: assistantSummary,
+          changes_snapshot: allChanges,
+        },
       ]);
+
+      // Fetch existing accumulated_changes to merge
+      const { data: existingSession } = await supabase
+        .from("ai_sessions")
+        .select("accumulated_changes")
+        .eq("id", sessionId)
+        .eq("user_id", user.id)
+        .single();
+
+      const existingAccumulated =
+        existingSession?.accumulated_changes &&
+        typeof existingSession.accumulated_changes === "object"
+          ? (existingSession.accumulated_changes as Record<string, string>)
+          : {};
+
+      const mergedAccumulated = { ...existingAccumulated, ...allChanges };
 
       const { error: updErr } = await supabase
         .from("ai_sessions")
-        .update({ status: "done", changes: formattedChanges, prompt })
+        .update({
+          status: "active",
+          changes: allChanges,
+          accumulated_changes: mergedAccumulated,
+          prompt,
+          llm_provider: overrideProvider ?? null,
+          llm_model: overrideModel ?? null,
+        })
         .eq("id", sessionId)
         .eq("user_id", user.id);
 
@@ -142,9 +225,12 @@ Return the modified files as JSON.`;
         .insert({
           user_id: user.id,
           prompt,
-          status: "done",
-          changes: formattedChanges,
+          status: "active",
+          changes: allChanges,
+          accumulated_changes: allChanges,
           project_id: null,
+          llm_provider: overrideProvider ?? null,
+          llm_model: overrideModel ?? null,
         })
         .select("id")
         .single();
@@ -154,13 +240,29 @@ Return the modified files as JSON.`;
       } else if (newSession?.id) {
         resolvedSessionId = newSession.id;
         await supabase.from("chat_messages").insert([
-          { session_id: newSession.id, role: "user", content: prompt },
-          { session_id: newSession.id, role: "assistant", content: assistantSummary },
+          {
+            session_id: newSession.id,
+            role: "user",
+            content: prompt,
+            selected_files: selectedFiles ?? null,
+          },
+          {
+            session_id: newSession.id,
+            role: "assistant",
+            content: assistantSummary,
+            changes_snapshot: allChanges,
+          },
         ]);
       }
     }
 
-    return NextResponse.json({ success: true, changes: formattedChanges, sessionId: resolvedSessionId });
+    return NextResponse.json({
+      success: true,
+      changes: allChanges,
+      modifiedFiles: formattedModified,
+      createdFiles,
+      sessionId: resolvedSessionId,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "AI modification failed";
     console.error("AI modify error:", err);

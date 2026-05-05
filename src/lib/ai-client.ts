@@ -7,10 +7,12 @@ interface AIOptions {
   model?: 'primary' | 'fast' | 'agent';
   maxTokens?: number;
   temperature?: number;
+  overrideProvider?: string;
+  overrideModel?: string;
 }
 
 export async function callAI(messages: AIMessage[], options: AIOptions = {}): Promise<string> {
-  const provider = process.env.LLM_PROVIDER || 'groq';
+  const provider = options.overrideProvider || process.env.LLM_PROVIDER || 'groq';
   const modelKey = options.model || 'primary';
 
   const modelMap: Record<string, string> = {
@@ -25,7 +27,7 @@ export async function callAI(messages: AIMessage[], options: AIOptions = {}): Pr
     agent:   parseInt(process.env.LLM_MAX_TOKENS_AGENT || '6000'),
   };
 
-  const model = modelMap[modelKey];
+  const model = options.overrideModel || modelMap[modelKey];
   const maxTokens = options.maxTokens ?? tokenMap[modelKey];
   const temperature = options.temperature ?? parseFloat(process.env.LLM_TEMPERATURE || '0.1');
 
