@@ -259,12 +259,7 @@ export function AIChat({
           </div>
         )}
 
-        <div className="flex items-end gap-2">
-          {selectedModel && onModelChange && (
-            <div className="shrink-0 pb-0.5">
-              <ModelSelector selected={selectedModel} onChange={onModelChange} />
-            </div>
-          )}
+        <div className="flex w-full items-end gap-2">
           <textarea
             ref={textareaRef}
             value={prompt}
@@ -275,17 +270,22 @@ export function AIChat({
             onKeyDown={handleKeyDown}
             placeholder="Describe what you want to change… (Enter to send)"
             disabled={loading || disabled}
-            rows={1}
-            className="min-h-10 max-h-40 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm focus:border-fuchsia-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-400/20 disabled:bg-slate-50 disabled:opacity-50"
+            rows={2}
+            className="min-h-12 max-h-40 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm leading-5 focus:border-fuchsia-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-400/20 disabled:bg-slate-50 disabled:opacity-50"
           />
-          <Button
-            size="sm"
-            onClick={onSubmit}
-            disabled={loading || disabled || !prompt.trim()}
-            className="h-10 w-10 shrink-0 cursor-pointer bg-linear-to-r from-fuchsia-600 to-orange-400 p-0 text-white transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
+          <div className="flex w-[10%] min-w-[84px] max-w-[120px] shrink-0 flex-col gap-1.5">
+            <Button
+              size="sm"
+              onClick={onSubmit}
+              disabled={loading || disabled || !prompt.trim()}
+              className="h-10 w-full cursor-pointer bg-linear-to-r from-fuchsia-600 to-orange-400 p-0 text-white transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+            {selectedModel && onModelChange && (
+              <ModelSelector selected={selectedModel} onChange={onModelChange} />
+            )}
+          </div>
         </div>
         <p className="text-xs text-slate-400 mt-1.5">
           {disabled
