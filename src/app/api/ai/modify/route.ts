@@ -3,6 +3,10 @@ import prettier from "prettier";
 import { createClient } from "@/lib/supabase/server";
 import { callAI } from "@/lib/ai-client";
 
+export const runtime = "nodejs";
+// Keep this long-running AI endpoint within Vercel Hobby limits.
+export const maxDuration = 300;
+
 const SYSTEM_PROMPT = `You are a precise code modification AI.
 The user will describe a UI or code change they want to make.
 You will return ONLY a valid JSON object where:
