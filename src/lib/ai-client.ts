@@ -14,10 +14,17 @@ interface AIOptions {
 function resolveGroqModel(model: string): string {
   const normalized = model.trim();
 
-  // Backward-compat aliases from older configs/docs.
+  // Aliases for NVIDIA / legacy model names that may appear in env vars or old configs.
   const aliasMap: Record<string, string> = {
     "meta/llama-3.1-8b-instruct": "llama-3.1-8b-instant",
     "meta/llama-3.1-70b-instruct": "llama-3.3-70b-versatile",
+    "meta/llama-3.3-70b-instruct": "llama-3.3-70b-versatile",
+    "nvidia/llama-3.1-nemotron-70b-instruct": "llama-3.3-70b-versatile",
+    "nvidia/llama-3.1-nemotron-nano-8b-instruct": "llama-3.1-8b-instant",
+    // Legacy Groq model IDs that were renamed
+    "llama3-70b-8192": "llama-3.3-70b-versatile",
+    "llama3-8b-8192": "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768": "llama-3.3-70b-versatile",
   };
 
   return aliasMap[normalized] ?? normalized;
@@ -68,7 +75,13 @@ async function callGroq(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`GROQ API error ${response.status}: ${err}`);
+    if (response.status === 401) {
+      throw new Error(`Groq API key is invalid or expired (401). Check GROQ_API_KEY in your .env.local.`);
+    }
+    if (response.status === 404) {
+      throw new Error(`Groq model "${model}" not found (404). Update LLM_MODEL_* in your .env.local to a valid Groq model.`);
+    }
+    throw new Error(`Groq API error ${response.status}: ${err}`);
   }
 
   const data = await response.json();
@@ -92,6 +105,12 @@ async function callNvidia(
 
   if (!response.ok) {
     const err = await response.text();
+    if (response.status === 401) {
+      throw new Error(`NVIDIA API key is invalid or expired (401). Check NVIDIA_API_KEY in your .env.local.`);
+    }
+    if (response.status === 404) {
+      throw new Error(`NVIDIA model "${model}" not found (404). Check the model name in your request or MODEL_OPTIONS.`);
+    }
     throw new Error(`NVIDIA API error ${response.status}: ${err}`);
   }
 

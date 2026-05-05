@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, GitBranch, Loader2, FolderGit2 } from "lucide-react";
@@ -82,6 +82,7 @@ export function EditClient({
   const [step, setStep] = useState<Step>("edit");
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [repoTreePaths, setRepoTreePaths] = useState<string[]>([]);
+  const [previewKey] = useState(() => crypto.randomUUID());
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const loadedFiles = new Set(Object.keys(fileContents));
@@ -402,6 +403,10 @@ export function EditClient({
 
   const diffChanges = step === "review" ? latestChanges : accumulatedChanges;
   const previewBaseFiles = { ...fileContents, ...baselineFiles };
+  const previewEditedFiles = useMemo(
+    () => ({ ...accumulatedChanges, ...latestChanges }),
+    [accumulatedChanges, latestChanges]
+  );
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -530,8 +535,13 @@ export function EditClient({
 
             <TabsContent value="preview" className="flex-1 min-h-0 overflow-hidden p-3">
               <LivePreview
-                allFiles={previewBaseFiles}
-                changedFiles={accumulatedChanges}
+                previewKey={previewKey}
+                connectionId={connectionId}
+                repoFullName={repoFullName}
+                branch={branch}
+                provider={provider}
+                workspaceFiles={previewBaseFiles}
+                editedFiles={previewEditedFiles}
                 installCommand={_installCommand}
                 startCommand={_startCommand}
                 repoTreePaths={repoTreePaths}
