@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FileCode, CheckCircle2, XCircle, Lock } from "lucide-react";
+import { FileCode, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EnvEditor } from "@/components/EnvEditor";
 
 type DiffViewerLibProps = {
   oldValue: string;
@@ -19,11 +18,6 @@ type DiffViewerLibProps = {
 };
 
 type DiffViewerLib = { Component: React.ComponentType<DiffViewerLibProps> };
-
-function isEnvFile(path: string): boolean {
-  const base = path.split("/").pop() ?? path;
-  return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
-}
 
 function LazyDiffPanel({ original, changed }: { original: string; changed: string }) {
   const [lib, setLib] = useState<DiffViewerLib | null>(null);
@@ -102,8 +96,6 @@ export function DiffViewer({
   }
 
   const isNew = (path: string) => !originalFiles[path] || originalFiles[path] === "";
-  const isEnv = isEnvFile(activeFile);
-
   return (
     <div className="flex flex-col h-full">
       {/* File tabs */}
@@ -111,7 +103,6 @@ export function DiffViewer({
         {changedPaths.map((path) => {
           const fileName = path.split("/").pop() ?? path;
           const newFile = isNew(path);
-          const envFile = isEnvFile(path);
           return (
             <button
               key={path}
@@ -122,17 +113,10 @@ export function DiffViewer({
                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
               }`}
             >
-              {envFile ? (
-                <Lock className="w-3 h-3 shrink-0 text-yellow-500" />
-              ) : (
-                <FileCode className="w-3 h-3 shrink-0" />
-              )}
+              <FileCode className="w-3 h-3 shrink-0" />
               {fileName}
               {newFile && (
                 <span className="bg-green-500 text-white text-[10px] px-1 rounded font-bold">NEW</span>
-              )}
-              {envFile && (
-                <span className="bg-yellow-200 text-yellow-800 text-[10px] px-1 rounded">ENV</span>
               )}
             </button>
           );
@@ -144,27 +128,11 @@ export function DiffViewer({
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {activeFile && isEnv ? (
-          <div className="border-l-4 border-yellow-400 bg-yellow-50 m-3 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Lock className="w-4 h-4 text-yellow-600" />
-              <span className="font-semibold text-yellow-700 text-sm">Environment File</span>
-              <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded">
-                Will NOT be committed to git
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mb-3">
-              Fill in your actual values. This file is only used for local preview (WebContainer).
-            </p>
-            <EnvEditor content={changedFiles[activeFile] ?? ""} />
-          </div>
-        ) : (
-          activeFile && (
-            <LazyDiffPanel
-              original={originalFiles[activeFile] ?? ""}
-              changed={changedFiles[activeFile] ?? ""}
-            />
-          )
+        {activeFile && (
+          <LazyDiffPanel
+            original={originalFiles[activeFile] ?? ""}
+            changed={changedFiles[activeFile] ?? ""}
+          />
         )}
       </div>
 

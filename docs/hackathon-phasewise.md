@@ -6,6 +6,14 @@
 
 ---
 
+## ENV Policy Update
+
+- ENV variables are managed in DB (`project_env_vars`) and injected before preview boot.
+- Creating/editing `.env` from chatbot prompts is no longer supported.
+- Any prior `.env` editor/diff flow is deprecated and removed.
+
+---
+
 ## 📄 Project Files
 
 | File | Purpose |

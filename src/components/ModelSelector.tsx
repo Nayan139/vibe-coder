@@ -20,6 +20,7 @@ export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number }>({
     top: 0,
     left: 0,
@@ -43,7 +44,10 @@ export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const clickedButtonArea = ref.current?.contains(target) ?? false;
+      const clickedMenu = menuRef.current?.contains(target) ?? false;
+      if (!clickedButtonArea && !clickedMenu) setOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -80,6 +84,7 @@ export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
       {open &&
         createPortal(
           <div
+            ref={menuRef}
             className="fixed z-[100] rounded-xl border bg-white shadow-lg"
             style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width }}
           >

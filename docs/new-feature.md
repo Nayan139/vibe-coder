@@ -6,6 +6,14 @@
 
 ---
 
+## ENV Policy Update
+
+- ENV variables are now managed only through `project_env_vars` (DB-backed UI on repo detail page).
+- ENV values are injected before project clone/boot for preview flows.
+- Chatbot-based `.env` creation/editing is removed and not supported.
+
+---
+
 ## 📄 Project Files
 
 | File | Purpose |
@@ -441,7 +449,7 @@ Step 5 (Live Preview) → Step 9 (Hot File Sync) → Step 6 (Multi-Prompt) → S
 
 **Problem:** AI can only edit existing files. Projects often need a `.env` file to run correctly. Without it, the dev server fails with missing environment variable errors.
 
-**Solution:** AI can create new files using a `CREATE:` prefix in the JSON key. `.env` files get a special masked editor UI and are excluded from git push automatically.
+**Solution:** AI can create new code files using a `CREATE:` prefix in the JSON key. `.env` keys/files are excluded from chatbot edits; environment variables are managed only in project settings.
 
 #### Updated AI System Prompt
 
@@ -449,18 +457,17 @@ Step 5 (Live Preview) → Step 9 (Hot File Sync) → Step 6 (Multi-Prompt) → S
 const SYSTEM_PROMPT = `You are a precise code modification AI.
 Return ONLY a valid JSON object where:
 - Keys are file paths for EXISTING files to modify (e.g. "src/app/page.tsx")
-- For NEW files, prefix the key with "CREATE:" (e.g. "CREATE:.env", "CREATE:src/utils/api.ts")
+- For NEW files, prefix the key with "CREATE:" (e.g. "CREATE:src/utils/api.ts")
 - Values are the COMPLETE file content
 
 Rules:
 - Return ONLY valid JSON. No explanation, no markdown, no code blocks.
-- For .env files: use placeholder values like YOUR_KEY_HERE, never real secrets.
+- Never create or modify `.env` / `.env.*` files. Environment variables are managed in project settings.
 - Only include files that actually need to change or be created.
 
 Example:
 {
   "src/app/page.tsx": "...modified content...",
-  "CREATE:.env": "VITE_API_URL=http://localhost:3001\nVITE_SECRET=YOUR_SECRET_HERE",
   "CREATE:src/utils/helper.ts": "export const helper = () => {}"
 }`;
 ```
@@ -543,12 +550,13 @@ function DiffPreview({ originalFiles, changedFiles }) {
 }
 ```
 
-#### EnvEditor Component
+#### Removed: EnvEditor Component
 
 ```typescript
 'use client';
 import { useState } from 'react';
 
+// Deprecated: env editing from chatbot/diff viewer is removed.
 export function EnvEditor({ content }: { content: string }) {
   const [vars, setVars] = useState(() =>
     content.split('\n')
@@ -582,7 +590,7 @@ export function EnvEditor({ content }: { content: string }) {
 
 #### ✅ Step 1 Done When:
 - [ ] AI can create new files — shown with "NEW" badge in diff viewer
-- [ ] `.env` files show masked editor with "Will NOT be committed" warning
+- [ ] Chatbot does not create or edit `.env` files
 - [ ] `.env` files are assembled from `project_env_vars` table (Step 10) before WebContainer boot — not stored as raw file content
 - [ ] `created_files` table stores all new non-env files per session
 
@@ -2070,7 +2078,7 @@ Server-side defaults via env vars. Users can override per-prompt from the model 
 | `<PRResultCard />` | `components/PRResultCard.tsx` | Phase 3 | 🔴 High | ✅ Done |
 | `<FileTree />` | `components/FileTree.tsx` | Phase 2 | 🟡 Medium | ✅ Done |
 | `<LoadingSkeleton />` | `components/LoadingSkeleton.tsx` | Phase 4 | 🟢 Low | ✅ Done |
-| `<EnvEditor />` | `components/EnvEditor.tsx` | Phase 5 Step 1 | 🔴 High | 🔲 Todo |
+| `<EnvEditor />` | `components/EnvEditor.tsx` | Phase 5 Step 1 | 🔴 High | ❌ Removed (env now DB-managed) |
 | `<RunCommandsCard />` | `components/RunCommandsCard.tsx` | Phase 5 Step 2 | 🔴 High | 🔲 Todo |
 | `<PromptBox />` (updated) | `components/PromptBox.tsx` | Phase 5 Step 3 | 🔴 High | 🔲 Todo |
 | `<ModelSelector />` | `components/ModelSelector.tsx` | Phase 5 Step 7 | 🔴 High | 🔲 Todo |
