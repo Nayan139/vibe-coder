@@ -133,7 +133,7 @@ export function LivePreview({
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [previewUrl, setPreviewUrl] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(true);
+  const [showLogs, setShowLogs] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [iframeKey, setIframeKey] = useState(0);
   const [initialPreviewHttpStatus, setInitialPreviewHttpStatus] = useState<number | null>(null);
@@ -397,8 +397,8 @@ export function LivePreview({
             : "";
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+    <div className="flex h-full flex-col overflow-hidden bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-slate-700">Live Preview</span>
           {e2bAvailable && (
@@ -454,13 +454,13 @@ export function LivePreview({
               Open
             </a>
           ) : null}
-          <Button size="sm" variant="outline" onClick={() => setShowLogs((prev) => !prev)} className="h-8 gap-1">
+          <Button size="sm" variant="outline" onClick={() => setShowLogs((prev) => !prev)} className="h-8 cursor-pointer gap-1">
             <Terminal className="h-3.5 w-3.5" />
             {showLogs ? "Hide logs" : "Logs"}
           </Button>
 
           {(status === "idle" || status === "error") && (
-            <Button size="sm" onClick={handleStartOrRestart} className="h-8 gap-1">
+            <Button size="sm" onClick={handleStartOrRestart} className="h-8 cursor-pointer gap-1 bg-linear-to-r from-fuchsia-600 to-orange-400 text-white hover:opacity-95">
               <Play className="h-3.5 w-3.5" />
               Start
             </Button>
@@ -468,11 +468,11 @@ export function LivePreview({
 
           {status === "ready" && (
             <>
-              <Button size="sm" onClick={reloadIframe} variant="outline" className="h-8 gap-1">
+              <Button size="sm" onClick={reloadIframe} variant="outline" className="h-8 cursor-pointer gap-1">
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
               </Button>
-              <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="h-8 gap-1">
+              <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="h-8 cursor-pointer gap-1">
                 <RotateCcw className="h-3.5 w-3.5" />
                 Hard Restart
               </Button>

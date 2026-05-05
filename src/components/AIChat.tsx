@@ -106,10 +106,10 @@ export function AIChat({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-white">
       {onNewChat && (
-        <div className="flex items-center justify-between px-4 pt-2 pb-1 shrink-0">
-          <span className="text-xs text-slate-400">{messageCount()}</span>
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 pb-2 pt-2.5">
+          <span className="text-xs font-medium text-slate-500">{messageCount()}</span>
           <NewChatButton
             hasChanges={hasAccumulatedChanges ?? false}
             onNewChat={onNewChat}
@@ -117,7 +117,7 @@ export function AIChat({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-12">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-rose-500 to-amber-400 shadow-sm shadow-rose-200 mb-4">
@@ -142,18 +142,18 @@ export function AIChat({
             </div>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div key={msg.content.slice(0, 40) + msg.role} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+          messages.map((msg, index) => (
+            <div key={`${msg.role}-${index}-${msg.content.slice(0, 20)}`} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "assistant" && (
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 mt-0.5">
                   <Bot className="h-4 w-4 text-rose-500" />
                 </div>
               )}
               <div
-                className={`max-w-[80%] px-3 py-2 rounded-xl text-sm leading-relaxed ${
+                className={`max-w-[82%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
                   msg.role === "user"
-                    ? "bg-linear-to-r from-rose-500 to-amber-400 text-white rounded-br-sm"
-                    : "bg-slate-100 text-slate-800 rounded-bl-sm"
+                    ? "rounded-br-sm bg-linear-to-r from-fuchsia-600 to-orange-400 text-white"
+                    : "rounded-bl-sm border border-slate-200 bg-slate-50 text-slate-800"
                 }`}
               >
                 <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
@@ -220,7 +220,7 @@ export function AIChat({
         </div>
       )}
 
-      <div className="border-t border-slate-100 px-4 py-3 shrink-0">
+      <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
         {selectedFiles !== undefined && (
           <div className="mb-2">
             {hasChips ? (
@@ -259,7 +259,12 @@ export function AIChat({
           </div>
         )}
 
-        <div className="flex gap-2 items-end">
+        <div className="flex items-end gap-2">
+          {selectedModel && onModelChange && (
+            <div className="shrink-0 pb-0.5">
+              <ModelSelector selected={selectedModel} onChange={onModelChange} />
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={prompt}
@@ -271,21 +276,16 @@ export function AIChat({
             placeholder="Describe what you want to change… (Enter to send)"
             disabled={loading || disabled}
             rows={1}
-            className="flex-1 resize-none px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-400/20 focus:border-rose-300 disabled:opacity-50 disabled:bg-slate-50 min-h-10 max-h-40"
+            className="min-h-10 max-h-40 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm focus:border-fuchsia-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-400/20 disabled:bg-slate-50 disabled:opacity-50"
           />
-          <div className="flex flex-col gap-1 shrink-0">
-            {selectedModel && onModelChange && (
-              <ModelSelector selected={selectedModel} onChange={onModelChange} />
-            )}
-            <Button
-              size="sm"
-              onClick={onSubmit}
-              disabled={loading || disabled || !prompt.trim()}
-              className="bg-linear-to-r from-rose-500 to-amber-400 hover:opacity-90 text-white h-10 w-10 p-0"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onClick={onSubmit}
+            disabled={loading || disabled || !prompt.trim()}
+            className="h-10 w-10 shrink-0 cursor-pointer bg-linear-to-r from-fuchsia-600 to-orange-400 p-0 text-white transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
         </div>
         <p className="text-xs text-slate-400 mt-1.5">
           {disabled

@@ -23,7 +23,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
         <Suspense>
           <ConnectionToast />
         </Suspense>
-        <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8 [&:has([data-full-bleed-editor='true'])]:max-w-none [&:has([data-full-bleed-editor='true'])]:px-0 [&:has([data-full-bleed-editor='true'])]:py-2">
           <DashboardErrorBoundary>{children}</DashboardErrorBoundary>
         </div>
       </main>

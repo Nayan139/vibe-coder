@@ -448,9 +448,9 @@ export function EditClient({
   );
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-50/20">
+    <div data-full-bleed-editor="true" className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(1200px_circle_at_15%_-10%,rgba(217,70,239,0.10),transparent_40%),radial-gradient(900px_circle_at_90%_0%,rgba(251,146,60,0.10),transparent_40%),linear-gradient(180deg,#fafafa_0%,#f6f7fb_100%)]">
       {/* Top bar */}
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-sm sm:gap-3 sm:px-5">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200/80 bg-white/85 px-4 py-3 backdrop-blur-xl sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
           size="sm"
@@ -494,10 +494,10 @@ export function EditClient({
       </header>
 
       {/* Three-panel editor */}
-      <div className="flex flex-col xl:flex-row flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-2 overflow-hidden px-0 py-2">
         {/* Left: File Tree */}
-        <aside className="w-full xl:w-60 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white flex flex-col min-h-0 max-h-[34vh] xl:max-h-none overflow-hidden">
-          <div className="px-3 pt-3 pb-2 border-b border-slate-100 shrink-0">
+        <aside className="hidden w-56 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:flex xl:flex-col">
+          <div className="shrink-0 border-b border-slate-100 bg-slate-50/70 px-3 pb-2 pt-3">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files</p>
             <p className="text-xs text-slate-400 mt-0.5">Click to add as context</p>
           </div>
@@ -515,7 +515,7 @@ export function EditClient({
         </aside>
 
         {/* Center: AI Chat */}
-        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white flex flex-col overflow-hidden max-h-[50vh] xl:max-h-none">
+        <div className="flex w-[24rem] min-h-0 min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm 2xl:w-[26rem]">
           <div className="flex-1 overflow-hidden">
             <AIChat
               messages={messages}
@@ -548,9 +548,9 @@ export function EditClient({
         </div>
 
         {/* Right: Diff Preview */}
-        <div className="w-full xl:w-[45%] xl:max-w-[50%] xl:shrink-0 bg-white flex flex-col min-h-0 flex-1 overflow-hidden">
-          <Tabs defaultValue="diff" className="flex h-full flex-col overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-slate-100 shrink-0 flex items-center justify-between">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <Tabs defaultValue="preview" className="flex h-full w-full flex-col overflow-hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 pb-2 pt-3">
               <TabsList variant="line">
                 <TabsTrigger value="diff">Diff View</TabsTrigger>
                 <TabsTrigger value="preview">Live Preview</TabsTrigger>
