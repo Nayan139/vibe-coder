@@ -584,6 +584,7 @@ export function EditClient({
                 installCommand={_installCommand}
                 startCommand={_startCommand}
                 repoTreePaths={repoTreePaths}
+                projectId={projectId ?? undefined}
                 syncStatus={syncStatus}
                 lastSyncedFiles={syncedFiles}
               />

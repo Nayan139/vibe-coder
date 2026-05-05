@@ -27,6 +27,8 @@ interface LivePreviewProps {
   installCommand: string;
   startCommand: string;
   repoTreePaths?: string[];
+  /** Step 10: project ID used to fetch saved env vars before preview boot */
+  projectId?: string;
   /** Step 9: hot-sync status passed from editor page */
   syncStatus?: SyncStatus;
   /** Step 9: file paths synced in the last hot-sync batch */
@@ -121,6 +123,7 @@ export function LivePreview({
   installCommand,
   startCommand,
   repoTreePaths = [],
+  projectId,
   syncStatus = "idle",
   lastSyncedFiles = [],
 }: LivePreviewProps) {
@@ -181,6 +184,17 @@ export function LivePreview({
     setLogs((prev) => [...prev.slice(-149), cleaned]);
   }, []);
 
+  async function fetchProjectEnvContent(): Promise<string> {
+    if (!projectId) return "";
+    try {
+      const res = await fetch(`/api/projects/${projectId}/env-vars/dotenv`);
+      if (!res.ok) return "";
+      return await res.text();
+    } catch {
+      return "";
+    }
+  }
+
   async function startE2B() {
     setLogs([]);
     setPreviewUrl("");
@@ -189,6 +203,16 @@ export function LivePreview({
     previousEditedRef.current = { ...editedFiles };
     let sawReady = false;
     let sawError = false;
+
+    const envContent = await fetchProjectEnvContent();
+    const envOverlay: Record<string, string> = {};
+    if (envContent.trim()) {
+      envOverlay[".env"] = envContent;
+      if (mergedForWebContainer["package.json"]?.includes('"next"')) {
+        envOverlay[".env.local"] = envContent;
+      }
+      addLog("🔐 Injecting project environment variables…");
+    }
 
     try {
       await consumeE2BPreviewStream(
@@ -200,7 +224,7 @@ export function LivePreview({
           provider,
           installCommand,
           startCommand,
-          overlayFiles: editedFiles,
+          overlayFiles: { ...envOverlay, ...editedFiles },
         },
         addLog,
         (url) => {
@@ -233,7 +257,18 @@ export function LivePreview({
       setPreviewUrl("");
       setStatus("mounting");
       addLog("Mounting project files in the browser…");
-      const wc = await mountProjectFiles(mergedForWebContainer);
+
+      const envContent = await fetchProjectEnvContent();
+      const filesWithEnv = { ...mergedForWebContainer };
+      if (envContent.trim()) {
+        filesWithEnv[".env"] = envContent;
+        if (filesWithEnv["package.json"]?.includes('"next"')) {
+          filesWithEnv[".env.local"] = envContent;
+        }
+        addLog("🔐 Environment variables loaded from project settings");
+      }
+
+      const wc = await mountProjectFiles(filesWithEnv);
 
       addLog(`Installing: ${installCommand}`);
       addLog(`Starting: ${startCommand}`);
@@ -242,7 +277,7 @@ export function LivePreview({
         wc,
         installCommand,
         startCommand,
-        Object.keys(mergedForWebContainer),
+        Object.keys(filesWithEnv),
         repoTreePaths,
         (url) => {
           setPreviewUrl(url);

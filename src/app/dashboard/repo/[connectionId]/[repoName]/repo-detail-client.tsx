@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StepProgress } from "@/components/StepProgress";
 import { RunCommandsCard } from "@/components/RunCommandsCard";
+import { EnvVarsCard } from "@/components/EnvVarsCard";
 import { BranchSelectorSkeleton } from "@/components/LoadingSkeleton";
 
 interface SetupInfo {
@@ -370,6 +371,13 @@ export function RepoDetailClient({ connectionId, repoFullName, provider, usernam
               setStartCmd(start);
             }}
           />
+        </div>
+      )}
+
+      {/* ENV Variable Manager — Step 10 */}
+      {projectId && !loadingReadme && (
+        <div className="mb-6">
+          <EnvVarsCard projectId={projectId} />
         </div>
       )}
 

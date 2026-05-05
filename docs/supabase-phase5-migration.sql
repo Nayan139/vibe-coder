@@ -5,6 +5,37 @@
 -- or ALTER … IF NOT EXISTS guards.
 -- ============================================================
 
+-- ── 0. project_env_vars — Step 10: per-project env variable store ─────────────
+
+CREATE TABLE IF NOT EXISTS project_env_vars (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  uuid        REFERENCES projects ON DELETE CASCADE NOT NULL,
+  user_id     uuid        REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+  key         text        NOT NULL,
+  value       text        NOT NULL DEFAULT '',
+  is_secret   boolean     NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (project_id, key)
+);
+
+ALTER TABLE project_env_vars ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'project_env_vars'
+      AND policyname = 'Users see own env vars'
+  ) THEN
+    CREATE POLICY "Users see own env vars"
+      ON project_env_vars
+      FOR ALL
+      USING (auth.uid() = user_id);
+  END IF;
+END
+$$;
+
 -- ── 1. projects — add run/install command columns ─────────────────────────────
 
 ALTER TABLE projects
