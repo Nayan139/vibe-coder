@@ -5,6 +5,7 @@ import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert, ExternalL
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { mountProjectFiles, startDevServer, teardownWebContainer, updateFileInContainer } from "@/lib/webcontainer";
+import { HotSyncIndicator, type SyncStatus } from "@/components/HotSyncIndicator";
 
 type PreviewEngine = "e2b" | "webcontainer";
 
@@ -26,6 +27,10 @@ interface LivePreviewProps {
   installCommand: string;
   startCommand: string;
   repoTreePaths?: string[];
+  /** Step 9: hot-sync status passed from editor page */
+  syncStatus?: SyncStatus;
+  /** Step 9: file paths synced in the last hot-sync batch */
+  lastSyncedFiles?: string[];
 }
 
 function isSimpleProject(packageJson: string | undefined): boolean {
@@ -116,6 +121,8 @@ export function LivePreview({
   installCommand,
   startCommand,
   repoTreePaths = [],
+  syncStatus = "idle",
+  lastSyncedFiles = [],
 }: LivePreviewProps) {
   const [engine, setEngine] = useState<PreviewEngine | null>(null);
   const [e2bAvailable, setE2bAvailable] = useState<boolean | null>(null);
@@ -127,6 +134,17 @@ export function LivePreview({
   const [errorMessage, setErrorMessage] = useState("");
 
   const previousEditedRef = useRef<Record<string, string>>({});
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Plain HTML projects (no package.json) don't support HMR — reload the iframe after sync.
+  const isPlainHtmlProject = !workspaceFiles["package.json"] && !editedFiles["package.json"];
+
+  useEffect(() => {
+    if (status !== "ready" || !isPlainHtmlProject) return;
+    if (syncStatus === "done" && iframeRef.current) {
+      iframeRef.current.contentWindow?.location.reload();
+    }
+  }, [syncStatus, isPlainHtmlProject, status]);
 
   const mergedForWebContainer = useMemo(
     () => ({ ...workspaceFiles, ...editedFiles }),
@@ -337,14 +355,17 @@ export function LivePreview({
               Use {engine === "e2b" ? "browser" : "cloud"}
             </Button>
           )}
-          {status === "ready" && (
+          {status === "ready" && syncStatus === "idle" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
               <CircleCheck className="h-3.5 w-3.5" />
               Live
             </span>
           )}
+          {status === "ready" && syncStatus !== "idle" && (
+            <HotSyncIndicator status={syncStatus} lastSyncedFiles={lastSyncedFiles} />
+          )}
           {status === "error" && (
-            <span className="inline-flex max-w-[220px] truncate text-xs text-red-600" title={errorMessage}>
+            <span className="inline-flex max-w-55 truncate text-xs text-red-600" title={errorMessage}>
               <CircleAlert className="mr-1 h-3.5 w-3.5 shrink-0" />
               Failed
             </span>
@@ -387,7 +408,7 @@ export function LivePreview({
           {status === "ready" && (
             <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="h-8 gap-1">
               <RotateCcw className="h-3.5 w-3.5" />
-              Restart
+              Hard Restart
             </Button>
           )}
 
@@ -416,7 +437,7 @@ export function LivePreview({
 
       <div className="min-h-0 flex-1 bg-gray-50">
         {status === "ready" && previewUrl ? (
-          <iframe src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
+          <iframe ref={iframeRef} src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-gray-500">
             {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (

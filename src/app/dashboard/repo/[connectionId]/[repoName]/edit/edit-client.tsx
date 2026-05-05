@@ -13,6 +13,8 @@ import { StepProgress } from "@/components/StepProgress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEFAULT_MODEL, MODEL_OPTIONS, type ModelOption } from "@/lib/models";
+import { hotSyncFiles, isWebContainerBooted } from "@/lib/webcontainer";
+import type { SyncStatus } from "@/components/HotSyncIndicator";
 
 interface EditClientProps {
   connectionId: string;
@@ -83,6 +85,10 @@ export function EditClient({
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [repoTreePaths, setRepoTreePaths] = useState<string[]>([]);
   const [previewKey] = useState(() => crypto.randomUUID());
+
+  // ── Step 9: Hot sync state ────────────────────────────────────────────────
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncedFiles, setSyncedFiles] = useState<string[]>([]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const loadedFiles = new Set(Object.keys(fileContents));
@@ -319,15 +325,48 @@ export function EditClient({
     }
   }
 
+  // ── Step 9: Hot sync ─────────────────────────────────────────────────────
+  async function hotSyncChanges(newChanges: Record<string, string>) {
+    // Only sync if a WebContainer instance is already running
+    if (!isWebContainerBooted()) return;
+
+    const envFiles = Object.keys(newChanges).filter((p) => p.includes(".env"));
+    if (envFiles.length > 0) {
+      toast.warning(".env file changed — restart the preview to apply environment variable changes.", {
+        action: { label: "OK", onClick: () => undefined },
+      });
+    }
+
+    const safeChanges = Object.fromEntries(
+      Object.entries(newChanges).filter(([p]) => !p.includes(".env"))
+    );
+    if (Object.keys(safeChanges).length === 0) return;
+
+    setSyncStatus("syncing");
+    setSyncedFiles([]);
+    try {
+      await hotSyncFiles(safeChanges, (path) => {
+        setSyncedFiles((prev) => [...prev, path]);
+      });
+      setSyncStatus("done");
+      setTimeout(() => setSyncStatus("idle"), 2500);
+    } catch {
+      setSyncStatus("idle");
+    }
+  }
+
   // ── Apply / Discard ───────────────────────────────────────────────────────
   function handleApplyChanges() {
     // Merge latest changes into fileContents (so AI has updated context next prompt)
     setFileContents((prev) => ({ ...prev, ...latestChanges }));
     // Merge into accumulated changes
     setAccumulatedChanges((prev) => ({ ...prev, ...latestChanges }));
+    const snapshot = { ...latestChanges };
     setLatestChanges({});
     setStep("edit");
     toast.success("Changes applied and accumulated. Keep prompting or commit when ready.");
+    // Fire-and-forget hot sync into WebContainer FS
+    void hotSyncChanges(snapshot);
   }
 
   function handleDiscardChanges() {
@@ -545,6 +584,8 @@ export function EditClient({
                 installCommand={_installCommand}
                 startCommand={_startCommand}
                 repoTreePaths={repoTreePaths}
+                syncStatus={syncStatus}
+                lastSyncedFiles={syncedFiles}
               />
             </TabsContent>
           </Tabs>

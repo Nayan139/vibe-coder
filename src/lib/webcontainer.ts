@@ -137,6 +137,10 @@ export async function getWebContainer(): Promise<WebContainer> {
   return wcBootPromise;
 }
 
+export function isWebContainerBooted(): boolean {
+  return wcInstance !== null;
+}
+
 export function teardownWebContainer() {
   if (activeServerProcess) {
     activeServerProcess.kill();
@@ -245,4 +249,28 @@ export async function startDevServer(
 export async function updateFileInContainer(filePath: string, content: string) {
   const wc = await getWebContainer();
   await wc.fs.writeFile(filePath, content);
+}
+
+/**
+ * Write one or more files into the running WebContainer filesystem.
+ * The dev server's HMR watcher (Vite / Next.js / CRA) picks up the changes
+ * automatically — no restart needed.
+ */
+export async function hotSyncFiles(
+  files: Record<string, string>,
+  onSynced?: (path: string) => void
+): Promise<void> {
+  const wc = await getWebContainer();
+
+  await Promise.all(
+    Object.entries(files).map(async ([path, content]) => {
+      const parts = path.split("/");
+      if (parts.length > 1) {
+        const dir = parts.slice(0, -1).join("/");
+        await wc.fs.mkdir(dir, { recursive: true }).catch(() => undefined);
+      }
+      await wc.fs.writeFile(path, content, "utf-8");
+      onSynced?.(path);
+    })
+  );
 }
