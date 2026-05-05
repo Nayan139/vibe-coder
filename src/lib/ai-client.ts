@@ -11,6 +11,18 @@ interface AIOptions {
   overrideModel?: string;
 }
 
+function resolveGroqModel(model: string): string {
+  const normalized = model.trim();
+
+  // Backward-compat aliases from older configs/docs.
+  const aliasMap: Record<string, string> = {
+    "meta/llama-3.1-8b-instruct": "llama-3.1-8b-instant",
+    "meta/llama-3.1-70b-instruct": "llama-3.3-70b-versatile",
+  };
+
+  return aliasMap[normalized] ?? normalized;
+}
+
 export async function callAI(messages: AIMessage[], options: AIOptions = {}): Promise<string> {
   const provider = options.overrideProvider || process.env.LLM_PROVIDER || 'groq';
   const modelKey = options.model || 'primary';
@@ -31,7 +43,9 @@ export async function callAI(messages: AIMessage[], options: AIOptions = {}): Pr
   const maxTokens = options.maxTokens ?? tokenMap[modelKey];
   const temperature = options.temperature ?? parseFloat(process.env.LLM_TEMPERATURE || '0.1');
 
-  if (provider === 'groq') return callGroq(messages, model, maxTokens, temperature);
+  if (provider === 'groq') {
+    return callGroq(messages, resolveGroqModel(model), maxTokens, temperature);
+  }
   if (provider === 'nvidia') return callNvidia(messages, model, maxTokens, temperature);
 
   throw new Error(`Unknown LLM_PROVIDER: ${provider}. Must be "groq" or "nvidia".`);

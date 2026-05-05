@@ -29,10 +29,10 @@ export function EditClient({
   repoFullName,
   branch,
   provider,
-  installCommand = "npm install",
-  startCommand = "npm run dev",
+  installCommand: _installCommand = "npm install",
+  startCommand: _startCommand = "npm run dev",
   projectId,
-}: EditClientProps) {
+}: Readonly<EditClientProps>) {
   const router = useRouter();
   const repoName = repoFullName.split("/").pop() ?? repoFullName;
 
@@ -163,42 +163,65 @@ export function EditClient({
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setGeneratingAI(true);
 
-    const contextFiles = buildContext(userMessage);
-
-    if (Object.keys(contextFiles).length === 0) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content:
-            "I don't have any file content loaded yet. Click files in the file tree on the left to load them, then try again.",
-        },
-      ]);
-      setGeneratingAI(false);
-      return;
-    }
-
     try {
-      const res = await fetch("/api/ai/modify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: userMessage,
-          fileContents: contextFiles,
-          projectContext: `Repo: ${repoFullName}, Branch: ${branch}`,
-          sessionId: sessionId ?? undefined,
-          projectId: projectId ?? undefined,
-          selectedFiles: selectedFiles.length > 0 ? selectedFiles : undefined,
-          overrideProvider: selectedModel.provider,
-          overrideModel: selectedModel.model,
-        }),
-      });
+      let res: Response;
+
+      if (selectedFiles.length > 0) {
+        // ── Mode A: files selected as chips → explicit context ─────────────────
+        const contextFiles = buildContext(userMessage);
+
+        if (Object.keys(contextFiles).length === 0) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content:
+                "The selected files have no content loaded yet. Click files in the file tree to load them, then try again.",
+            },
+          ]);
+          return;
+        }
+
+        res = await fetch("/api/ai/modify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: userMessage,
+            fileContents: contextFiles,
+            projectContext: `Repo: ${repoFullName}, Branch: ${branch}`,
+            sessionId: sessionId ?? undefined,
+            projectId: projectId ?? undefined,
+            selectedFiles,
+            overrideProvider: selectedModel.provider,
+            overrideModel: selectedModel.model,
+          }),
+        });
+      } else {
+        // ── Mode B: no chips → whole-project AI mode (server picks files) ──────
+        res = await fetch("/api/ai/whole-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: userMessage,
+            connectionId,
+            repoFullName,
+            branch,
+            projectContext: `Repo: ${repoFullName}, Branch: ${branch}`,
+            sessionId: sessionId ?? undefined,
+            projectId: projectId ?? undefined,
+            overrideProvider: selectedModel.provider,
+            overrideModel: selectedModel.model,
+          }),
+        });
+      }
 
       const data = await res.json() as {
         success?: boolean;
         error?: string;
         changes?: Record<string, string>;
         sessionId?: string;
+        fetchedFiles?: Record<string, string>;
+        filesAnalyzed?: string[];
       };
 
       if (!res.ok || !data.success) {
@@ -212,13 +235,27 @@ export function EditClient({
 
       const aiChanges = data.changes ?? {};
       const changedPaths = Object.keys(aiChanges);
+      const fetchedFiles = data.fetchedFiles ?? {};
 
-      // Snapshot baselines for any files we haven't seen before
+      // Whole-project mode: add fetched originals to fileContents so the tree
+      // shows them as loaded and future prompts can use them as context.
+      if (Object.keys(fetchedFiles).length > 0) {
+        setFileContents((prev) => {
+          const next = { ...prev };
+          for (const [p, c] of Object.entries(fetchedFiles)) {
+            if (next[p] === undefined) next[p] = c;
+          }
+          return next;
+        });
+      }
+
+      // Snapshot baselines for any files we haven't seen before.
+      // fetchedFiles supplies the original content for whole-project mode.
       setBaselineFiles((prev) => {
         const next = { ...prev };
         for (const path of changedPaths) {
           if (next[path] === undefined) {
-            next[path] = fileContents[path] ?? "";
+            next[path] = fetchedFiles[path] ?? fileContents[path] ?? "";
           }
         }
         return next;
@@ -226,7 +263,16 @@ export function EditClient({
 
       setLatestChanges(aiChanges);
 
-      const assistantContent = `Done! Modified ${changedPaths.length} file${changedPaths.length !== 1 ? "s" : ""}:\n${changedPaths.map((p) => `• ${p}`).join("\n")}\n\nReview the diff on the right, then click "Apply Changes" to add them to your session.`;
+      const analyzedCount = data.filesAnalyzed?.length ?? 0;
+      const fileList = changedPaths.map((p) => `• ${p}`).join("\n");
+      const changedLabel = changedPaths.length === 1 ? "1 file" : `${changedPaths.length} files`;
+      let assistantContent: string;
+      if (analyzedCount > 0) {
+        const analyzedLabel = analyzedCount === 1 ? "1 file" : `${analyzedCount} files`;
+        assistantContent = `Analyzed ${analyzedLabel} and modified ${changedLabel}:\n${fileList}\n\nReview the diff on the right, then click "Apply Changes".`;
+      } else {
+        assistantContent = `Done! Modified ${changedLabel}:\n${fileList}\n\nReview the diff on the right, then click "Apply Changes" to add them to your session.`;
+      }
 
       setMessages((prev) => [
         ...prev,
