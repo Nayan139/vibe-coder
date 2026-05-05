@@ -41,21 +41,22 @@ export async function callAI(messages: AIMessage[], options: AIOptions = {}): Pr
   };
 
   const tokenMap: Record<string, number> = {
-    primary: parseInt(process.env.LLM_MAX_TOKENS_CODE  || '4000'),
-    fast:    parseInt(process.env.LLM_MAX_TOKENS_TEXT  || '800'),
-    agent:   parseInt(process.env.LLM_MAX_TOKENS_AGENT || '6000'),
+    primary: Number.parseInt(process.env.LLM_MAX_TOKENS_CODE  || '4000'),
+    fast:    Number.parseInt(process.env.LLM_MAX_TOKENS_TEXT  || '800'),
+    agent:   Number.parseInt(process.env.LLM_MAX_TOKENS_AGENT || '6000'),
   };
 
   const model = options.overrideModel || modelMap[modelKey];
   const maxTokens = options.maxTokens ?? tokenMap[modelKey];
-  const temperature = options.temperature ?? parseFloat(process.env.LLM_TEMPERATURE || '0.1');
+  const temperature = options.temperature ?? Number.parseFloat(process.env.LLM_TEMPERATURE || '0.1');
 
   if (provider === 'groq') {
     return callGroq(messages, resolveGroqModel(model), maxTokens, temperature);
   }
   if (provider === 'nvidia') return callNvidia(messages, model, maxTokens, temperature);
+  if (provider === 'gemini') return callGemini(messages, model, maxTokens, temperature);
 
-  throw new Error(`Unknown LLM_PROVIDER: ${provider}. Must be "groq" or "nvidia".`);
+  throw new Error(`Unknown LLM_PROVIDER: ${provider}. Must be "groq", "nvidia", or "gemini".`);
 }
 
 async function callGroq(
@@ -116,4 +117,53 @@ async function callNvidia(
 
   const data = await response.json();
   return data.choices[0].message.content as string;
+}
+
+async function callGemini(
+  messages: AIMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
+  const systemMsg = messages.find((m) => m.role === 'system');
+  const conversationMsgs = messages.filter((m) => m.role !== 'system');
+
+  const contents = conversationMsgs.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const body: Record<string, unknown> = {
+    contents,
+    generationConfig: { maxOutputTokens: maxTokens, temperature },
+  };
+
+  if (systemMsg) {
+    body.systemInstruction = { parts: [{ text: systemMsg.content }] };
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    if (response.status === 400) {
+      throw new Error(`Gemini API key is invalid or request malformed (400). Check GEMINI_API_KEY in your .env.local.`);
+    }
+    if (response.status === 403) {
+      throw new Error(`Gemini API key is invalid or expired (403). Check GEMINI_API_KEY in your .env.local.`);
+    }
+    if (response.status === 404) {
+      throw new Error(`Gemini model "${model}" not found (404). Update the model name in MODEL_OPTIONS.`);
+    }
+    throw new Error(`Gemini API error ${response.status}: ${err}`);
+  }
+
+  const data = await response.json();
+  return data.candidates[0].content.parts[0].text as string;
 }

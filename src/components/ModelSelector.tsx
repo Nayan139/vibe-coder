@@ -5,8 +5,14 @@ import { ChevronDown } from "lucide-react";
 import { MODEL_OPTIONS, type ModelOption } from "@/lib/models";
 
 interface ModelSelectorProps {
-  selected: ModelOption;
-  onChange: (model: ModelOption) => void;
+  readonly selected: ModelOption;
+  readonly onChange: (model: ModelOption) => void;
+}
+
+function badgeClass(badge: string) {
+  if (badge === "GROQ") return "bg-orange-100 text-orange-600";
+  if (badge === "GEMINI") return "bg-blue-100 text-blue-600";
+  return "bg-green-100 text-green-600";
 }
 
 export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
@@ -21,8 +27,6 @@ export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const isGroq = selected.badge === "GROQ";
-
   return (
     <div className="relative" ref={ref}>
       <button
@@ -30,11 +34,7 @@ export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 text-xs border rounded-lg px-2 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors"
       >
-        <span
-          className={`text-xs px-1.5 py-0.5 rounded font-bold ${
-            isGroq ? "bg-orange-100 text-orange-600" : "bg-green-100 text-green-600"
-          }`}
-        >
+        <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${badgeClass(selected.badge)}`}>
           {selected.badge}
         </span>
         <span className="text-gray-700 hidden sm:inline">{selected.label}</span>
@@ -59,13 +59,7 @@ export function ModelSelector({ selected, onChange }: ModelSelectorProps) {
               }`}
             >
               <div className="flex items-center gap-2">
-                <span
-                  className={`text-xs px-1.5 py-0.5 rounded font-bold ${
-                    opt.badge === "GROQ"
-                      ? "bg-orange-100 text-orange-600"
-                      : "bg-green-100 text-green-600"
-                  }`}
-                >
+                <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${badgeClass(opt.badge)}`}>
                   {opt.badge}
                 </span>
                 <span>{opt.label}</span>
