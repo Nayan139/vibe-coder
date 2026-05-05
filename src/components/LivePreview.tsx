@@ -1,61 +1,307 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert, ExternalLink, RefreshCw } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { mountProjectFiles, startDevServer, teardownWebContainer, updateFileInContainer } from "@/lib/webcontainer";
+import { HotSyncIndicator, type SyncStatus } from "@/components/HotSyncIndicator";
 
-type PreviewStatus = "idle" | "mounting" | "installing" | "starting" | "ready" | "error";
+type PreviewEngine = "e2b" | "webcontainer";
+
+type E2bStatus = "idle" | "booting" | "ready" | "error";
+type WcPreviewStatus = "idle" | "mounting" | "installing" | "starting" | "ready" | "error";
+
+type PreviewStatus = E2bStatus | WcPreviewStatus;
 
 interface LivePreviewProps {
-  allFiles: Record<string, string>;
-  changedFiles: Record<string, string>;
+  previewKey: string;
+  connectionId: string;
+  repoFullName: string;
+  branch: string;
+  provider: string;
+  /** Broad file context for in-browser WebContainer mount (may be partial). */
+  workspaceFiles: Record<string, string>;
+  /** Accumulated + in-review AI edits — overlaid on E2B clone and hot-pushed while preview runs. */
+  editedFiles: Record<string, string>;
   installCommand: string;
   startCommand: string;
   repoTreePaths?: string[];
+  /** Step 10: project ID used to fetch saved env vars before preview boot */
+  projectId?: string;
+  /** Step 9: hot-sync status passed from editor page */
+  syncStatus?: SyncStatus;
+  /** Step 9: file paths synced in the last hot-sync batch */
+  lastSyncedFiles?: string[];
+}
+
+function isSimpleProject(packageJson: string | undefined): boolean {
+  if (!packageJson) return false;
+  try {
+    const pkg = JSON.parse(packageJson) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const n = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length;
+    return n < 15;
+  } catch {
+    return false;
+  }
+}
+
+function stripAnsi(line: string): string {
+  return line
+    .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")
+    .replace(/\r/g, "")
+    .trimEnd();
+}
+
+async function consumeE2BPreviewStream(
+  body: Record<string, unknown>,
+  onLog: (line: string) => void,
+  onReady: (url: string) => void,
+  onError: (message: string) => void
+) {
+  const res = await fetch("/api/preview/logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || `Preview failed (${res.status})`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body from preview stream.");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const processEvents = (chunk: string) => {
+    buffer += chunk;
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      const lines = part.split("\n").filter(Boolean);
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of lines) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      const dataRaw = dataLines.join("");
+      if (!dataRaw) continue;
+      try {
+        const payload = JSON.parse(dataRaw) as { message?: string; previewUrl?: string };
+        if (event === "log" && payload.message) onLog(payload.message);
+        if (event === "ready" && payload.previewUrl) onReady(payload.previewUrl);
+        if (event === "error") onError(payload.message || "Preview error");
+      } catch {
+        onLog(dataRaw);
+      }
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    processEvents(decoder.decode(value, { stream: true }));
+  }
+  processEvents(decoder.decode());
 }
 
 export function LivePreview({
-  allFiles,
-  changedFiles,
+  previewKey,
+  connectionId,
+  repoFullName,
+  branch,
+  provider,
+  workspaceFiles,
+  editedFiles,
   installCommand,
   startCommand,
   repoTreePaths = [],
+  projectId,
+  syncStatus = "idle",
+  lastSyncedFiles = [],
 }: LivePreviewProps) {
+  const [engine, setEngine] = useState<PreviewEngine | null>(null);
+  const [e2bAvailable, setE2bAvailable] = useState<boolean | null>(null);
+
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [previewUrl, setPreviewUrl] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(true);
-  const previousFilesRef = useRef<Record<string, string>>({});
+  const [showLogs, setShowLogs] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [iframeKey, setIframeKey] = useState(0);
+  const [initialPreviewHttpStatus, setInitialPreviewHttpStatus] = useState<number | null>(null);
 
-  const mergedFiles = useMemo(() => ({ ...allFiles, ...changedFiles }), [allFiles, changedFiles]);
+  const previousEditedRef = useRef<Record<string, string>>({});
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const didAutoReloadRef = useRef(false);
 
-  const addLog = (line: string) => {
-    // Strip ANSI escape sequences so terminal output is readable in UI logs.
-    const cleaned = line
-      .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")
-      .replace(/\r/g, "")
-      .trimEnd();
+  const reloadIframe = useCallback(() => setIframeKey((k) => k + 1), []);
+
+  // addLog must be declared before any effect that references it.
+  const addLog = useCallback((line: string) => {
+    const cleaned = stripAnsi(line);
     if (!cleaned) return;
     setLogs((prev) => [...prev.slice(-149), cleaned]);
-  };
+    const m = /Public preview URL responded \(HTTP (\d+)\)/.exec(cleaned);
+    if (m) setInitialPreviewHttpStatus(Number.parseInt(m[1], 10));
+  }, []);
 
-  async function handleStartOrRestart() {
+  // Plain HTML projects (no package.json) don't support HMR — reload the iframe after sync.
+  const isPlainHtmlProject = !workspaceFiles["package.json"] && !editedFiles["package.json"];
+
+  useEffect(() => {
+    if (status !== "ready" || !isPlainHtmlProject || syncStatus !== "done") return;
+    const t = setTimeout(reloadIframe, 0);
+    return () => clearTimeout(t);
+  }, [syncStatus, isPlainHtmlProject, status, reloadIframe]);
+
+  // Always auto-reload the iframe once after E2B preview becomes ready.
+  // Next.js dev mode may return HTTP 200 with blank content while still compiling
+  // on first request — waiting 5 s gives the compiler time to finish.
+  useEffect(() => {
+    if (status !== "ready" || engine !== "e2b" || !previewUrl) return;
+    if (didAutoReloadRef.current) return;
+    const delay = initialPreviewHttpStatus !== null && initialPreviewHttpStatus >= 500 ? 4000 : 5000;
+    const timer = setTimeout(() => {
+      didAutoReloadRef.current = true;
+      addLog("Auto-refreshing preview after initial compile…");
+      reloadIframe();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [status, engine, previewUrl, initialPreviewHttpStatus, addLog, reloadIframe]);
+
+  const mergedForWebContainer = useMemo(
+    () => ({ ...workspaceFiles, ...editedFiles }),
+    [workspaceFiles, editedFiles]
+  );
+
+  const pkgJson = workspaceFiles["package.json"] ?? editedFiles["package.json"];
+  const simple = isSimpleProject(pkgJson);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/preview/config")
+      .then((r) => r.json())
+      .then((data: { e2bConfigured?: boolean }) => {
+        if (cancelled) return;
+        const ok = Boolean(data.e2bConfigured);
+        setE2bAvailable(ok);
+        if (ok) setEngine("e2b");
+        else setEngine("webcontainer");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setE2bAvailable(false);
+        setEngine("webcontainer");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function fetchProjectEnvContent(): Promise<string> {
+    if (!projectId) return "";
+    try {
+      const res = await fetch(`/api/projects/${projectId}/env-vars/dotenv`);
+      if (!res.ok) return "";
+      return await res.text();
+    } catch {
+      return "";
+    }
+  }
+
+  async function startE2B() {
+    setLogs([]);
+    setPreviewUrl("");
+    setErrorMessage("");
+    setStatus("booting");
+    didAutoReloadRef.current = false;
+    setInitialPreviewHttpStatus(null);
+    previousEditedRef.current = { ...editedFiles };
+    let sawReady = false;
+    let sawError = false;
+
+    const envContent = await fetchProjectEnvContent();
+    const envOverlay: Record<string, string> = {};
+    if (envContent.trim()) {
+      envOverlay[".env"] = envContent;
+      if (mergedForWebContainer["package.json"]?.includes('"next"')) {
+        envOverlay[".env.local"] = envContent;
+      }
+      addLog("🔐 Injecting project environment variables…");
+    }
+
+    try {
+      await consumeE2BPreviewStream(
+        {
+          previewKey,
+          connectionId,
+          repoFullName,
+          branch,
+          provider,
+          installCommand,
+          startCommand,
+          overlayFiles: { ...envOverlay, ...editedFiles },
+        },
+        addLog,
+        (url) => {
+          sawReady = true;
+          setPreviewUrl(url);
+          setStatus("ready");
+          addLog(`Ready: ${url}`);
+        },
+        (msg) => {
+          sawError = true;
+          setErrorMessage(msg);
+          setStatus("error");
+        }
+      );
+      if (!sawReady && !sawError) {
+        setErrorMessage("Stream ended before the preview became ready.");
+        setStatus("error");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Preview failed.";
+      setErrorMessage(msg);
+      setStatus("error");
+      addLog(`Error: ${msg}`);
+    }
+  }
+
+  async function startWebContainer() {
     try {
       setLogs([]);
       setPreviewUrl("");
       setStatus("mounting");
-      addLog("Mounting project files...");
-      const wc = await mountProjectFiles(mergedFiles);
+      addLog("Mounting project files in the browser…");
 
-      addLog(`Installing dependencies: ${installCommand}`);
-      addLog(`Starting dev server: ${startCommand}`);
+      const envContent = await fetchProjectEnvContent();
+      const filesWithEnv = { ...mergedForWebContainer };
+      if (envContent.trim()) {
+        filesWithEnv[".env"] = envContent;
+        if (filesWithEnv["package.json"]?.includes('"next"')) {
+          filesWithEnv[".env.local"] = envContent;
+        }
+        addLog("🔐 Environment variables loaded from project settings");
+      }
+
+      const wc = await mountProjectFiles(filesWithEnv);
+
+      addLog(`Installing: ${installCommand}`);
+      addLog(`Starting: ${startCommand}`);
 
       await startDevServer(
         wc,
         installCommand,
         startCommand,
-        Object.keys(mergedFiles),
+        Object.keys(filesWithEnv),
         repoTreePaths,
         (url) => {
           setPreviewUrl(url);
@@ -65,115 +311,233 @@ export function LivePreview({
         (line) => addLog(line),
         (phase) => setStatus(phase)
       );
-      previousFilesRef.current = { ...mergedFiles };
+      previousEditedRef.current = { ...editedFiles };
     } catch (error) {
       setStatus("error");
       const message = error instanceof Error ? error.message : "Failed to start preview.";
+      setErrorMessage(message);
       addLog(`Error: ${message}`);
       if (message.includes("instance limit")) {
-        addLog("Attempting one-time WebContainer reset...");
+        addLog("Attempting one-time WebContainer reset…");
         teardownWebContainer();
       }
     }
   }
 
-  useEffect(() => {
-    if (status !== "ready") return;
+  async function handleStartOrRestart() {
+    if (engine === "e2b") {
+      await startE2B();
+      return;
+    }
+    await startWebContainer();
+  }
 
-    const previous = previousFilesRef.current;
-    const updates = Object.entries(changedFiles).filter(([path, content]) => previous[path] !== content);
+  useEffect(() => {
+    if (status !== "ready" || engine === null) return;
+
+    const prev = previousEditedRef.current;
+    const updates = Object.entries(editedFiles).filter(([path, content]) => prev[path] !== content);
     if (updates.length === 0) return;
 
-    void Promise.all(
-      updates.map(async ([path, content]) => {
-        await updateFileInContainer(path, content);
-        addLog(`Hot updated ${path}`);
+    if (engine === "e2b") {
+      void fetch("/api/preview/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          previewKey,
+          connectionId,
+          changes: Object.fromEntries(updates),
+        }),
       })
-    );
+        .then(async (res) => {
+          if (!res.ok) {
+            const j = (await res.json().catch(() => ({}))) as { error?: string };
+            addLog(`Hot update failed: ${j.error ?? res.status}`);
+            return;
+          }
+          for (const [path] of updates) addLog(`Pushed ${path} to cloud preview`);
+          addLog("Synced — refreshing preview…");
+          setTimeout(reloadIframe, 2500);
+        })
+        .catch(() => addLog("Hot update request failed."));
+    } else {
+      void Promise.all(
+        updates.map(async ([path, content]) => {
+          await updateFileInContainer(path, content);
+          addLog(`Hot updated ${path}`);
+        })
+      );
+    }
 
-    previousFilesRef.current = { ...previous, ...changedFiles };
-  }, [changedFiles, status]);
+    previousEditedRef.current = { ...prev, ...editedFiles };
+  }, [addLog, connectionId, editedFiles, engine, previewKey, reloadIframe, status]);
+
+  const canToggleEngine = e2bAvailable === true && simple;
+
+  if (engine === null || e2bAvailable === null) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        <Loader2 className="h-6 w-6 animate-spin text-rose-500" />
+        Preparing preview…
+      </div>
+    );
+  }
+
+  const loadingMessage =
+    status === "booting"
+      ? engine === "e2b"
+        ? "Cloning & installing in cloud…"
+        : "Working…"
+      : status === "mounting"
+        ? "Mounting files…"
+        : status === "installing"
+          ? "Installing dependencies…"
+          : status === "starting"
+            ? "Starting dev server…"
+            : "";
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">Live Preview</span>
-          {status === "ready" && (
+    <div className="flex h-full flex-col overflow-hidden bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">Live Preview</span>
+          {e2bAvailable && (
+            <span className="text-xs text-slate-400">
+              {engine === "e2b" ? "Cloud (E2B)" : "Browser"}
+            </span>
+          )}
+          {canToggleEngine && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setEngine((e) => (e === "e2b" ? "webcontainer" : "e2b"))}
+            >
+              Use {engine === "e2b" ? "browser" : "cloud"}
+            </Button>
+          )}
+          {status === "ready" && syncStatus === "idle" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
               <CircleCheck className="h-3.5 w-3.5" />
               Live
             </span>
           )}
+          {status === "ready" && syncStatus !== "idle" && (
+            <HotSyncIndicator status={syncStatus} lastSyncedFiles={lastSyncedFiles} />
+          )}
           {status === "error" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-700">
-              <CircleAlert className="h-3.5 w-3.5" />
-              Error
+            <span className="inline-flex max-w-55 truncate text-xs text-red-600" title={errorMessage}>
+              <CircleAlert className="mr-1 h-3.5 w-3.5 shrink-0" />
+              Failed
             </span>
           )}
+          {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") &&
+            loadingMessage && (
+              <span className="text-xs text-amber-700">{loadingMessage}</span>
+            )}
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setShowLogs((prev) => !prev)}>
-            <Terminal className="h-4 w-4" />
-            {showLogs ? "Hide Logs" : "Logs"}
+          {!e2bAvailable && (
+            <span className="hidden text-xs text-slate-400 sm:inline">
+              Add E2B_API_KEY for cloud preview
+            </span>
+          )}
+          {status === "ready" && previewUrl ? (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-8 gap-1")}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open
+            </a>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => setShowLogs((prev) => !prev)} className="h-8 cursor-pointer gap-1">
+            <Terminal className="h-3.5 w-3.5" />
+            {showLogs ? "Hide logs" : "Logs"}
           </Button>
 
           {(status === "idle" || status === "error") && (
-            <Button size="sm" onClick={handleStartOrRestart} className="gap-1.5">
-              <Play className="h-4 w-4" />
+            <Button size="sm" onClick={handleStartOrRestart} className="h-8 cursor-pointer gap-1 bg-linear-to-r from-fuchsia-600 to-orange-400 text-white hover:opacity-95">
+              <Play className="h-3.5 w-3.5" />
               Start
             </Button>
           )}
 
           {status === "ready" && (
-            <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="gap-1.5">
-              <RotateCcw className="h-4 w-4" />
-              Restart
+            <>
+              <Button size="sm" onClick={reloadIframe} variant="outline" className="h-8 cursor-pointer gap-1">
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
+              <Button size="sm" onClick={handleStartOrRestart} variant="secondary" className="h-8 cursor-pointer gap-1">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Hard Restart
+              </Button>
+            </>
+          )}
+
+          {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
+            <Button size="sm" disabled className="h-8 gap-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Working
             </Button>
           )}
         </div>
       </div>
 
       {showLogs && (
-        <div className="h-36 overflow-y-auto border-b border-gray-100 bg-slate-950 p-3 font-mono text-xs text-green-300">
+        <div className="h-36 overflow-y-auto border-b border-slate-100 bg-slate-950 p-3 font-mono text-xs text-green-300">
           {logs.length === 0 ? (
-            <p className="text-slate-400">Logs appear here after you start preview.</p>
+            <p className="text-slate-400">
+              {engine === "e2b"
+                ? "Cloud preview clones your repo, installs deps, and streams logs here."
+                : "Logs appear after you start browser preview."}
+            </p>
           ) : (
-            logs.map((line, idx) => <div key={`${idx}-${line.slice(0, 20)}`}>{line}</div>)
+            logs.map((line, idx) => <div key={`${idx}-${line.slice(0, 24)}`}>{line}</div>)
           )}
         </div>
       )}
 
-      <div className="flex-1 bg-gray-50">
+      <div className="min-h-0 flex-1 bg-slate-50">
         {status === "ready" && previewUrl ? (
-          <iframe src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
+          <iframe key={iframeKey} ref={iframeRef} src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-gray-500">
-            {(status === "mounting" || status === "installing" || status === "starting") && (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-slate-500">
+            {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
               <>
-                <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
-                <p className="text-sm">
-                  {status === "mounting" && "Mounting files..."}
-                  {status === "installing" && "Installing dependencies..."}
-                  {status === "starting" && "Starting dev server..."}
-                </p>
+                <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
+                <p className="text-sm">{loadingMessage || "Working…"}</p>
+                {(status === "booting" || status === "installing") && engine === "e2b" && (
+                  <p className="text-xs text-slate-400">First cloud run often takes 1–3 minutes.</p>
+                )}
               </>
             )}
 
             {status === "idle" && (
               <>
-                <p className="text-sm font-medium text-gray-700">Run this project in-browser</p>
-                <p className="text-xs text-gray-500">
-                  Uses install command <code>{installCommand}</code> and start command <code>{startCommand}</code>.
+                <p className="text-sm font-medium text-slate-700">
+                  {engine === "e2b" ? "Run the repo in a cloud sandbox" : "Run the project in your browser"}
                 </p>
+                <p className="max-w-sm text-xs text-slate-500">
+                  Install: <code className="text-slate-700">{installCommand}</code> · Start:{" "}
+                  <code className="text-slate-700">{startCommand}</code>
+                </p>
+                {!e2bAvailable && (
+                  <p className="text-xs text-amber-700">
+                    Web Preview uses WebContainers (headers/COOP). For fewer issues, add E2B_API_KEY.
+                  </p>
+                )}
               </>
             )}
 
             {status === "error" && (
               <>
                 <p className="text-sm font-medium text-red-600">Preview failed</p>
-                <p className="text-xs text-gray-500">Check logs and restart preview.</p>
+                <p className="max-w-md text-xs text-slate-600">{errorMessage}</p>
               </>
             )}
           </div>

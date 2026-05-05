@@ -10,28 +10,36 @@ const STEPS = [
   { id: 6, label: "Push & PR" },
 ];
 
-export function StepProgress({ currentStep }: { currentStep: number }) {
+function getLabelColor(currentStep: number, stepId: number) {
+  if (currentStep > stepId) return "text-amber-500";
+  if (currentStep === stepId) return "text-rose-600";
+  return "text-slate-400";
+}
+
+function getStepCircleClass(currentStep: number, stepId: number) {
+  if (currentStep > stepId) return "bg-linear-to-br from-rose-500 to-amber-400 text-white shadow-sm shadow-rose-200";
+  if (currentStep === stepId) return "border-2 border-rose-500 bg-white text-rose-600 shadow-sm shadow-rose-100";
+  return "border-2 border-slate-200 bg-white text-slate-400";
+}
+
+export function StepProgress({ currentStep }: Readonly<{ currentStep: number }>) {
   return (
-    <div className="flex items-center gap-1 overflow-x-auto pb-1">
+    <div className="flex w-full items-start">
       {STEPS.map((step, i) => (
-        <div key={step.id} className="flex items-center gap-1 shrink-0">
-          <div className="flex items-center gap-2">
+        <div key={step.id} className="flex min-w-0 items-start" style={{ flex: i < STEPS.length - 1 ? "1 1 0%" : "0 0 auto" }}>
+          <div className="flex shrink-0 flex-col items-center gap-0.5">
             <div
               className={cn(
-                "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors",
-                currentStep > step.id
-                  ? "bg-violet-600 border-violet-600 text-white"
-                  : currentStep === step.id
-                  ? "bg-white border-violet-600 text-violet-600"
-                  : "bg-white border-gray-300 text-gray-400"
+                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all duration-200",
+                getStepCircleClass(currentStep, step.id)
               )}
             >
-              {currentStep > step.id ? <Check className="w-3.5 h-3.5" /> : step.id}
+              {currentStep > step.id ? <Check className="h-3.5 w-3.5" /> : step.id}
             </div>
             <span
               className={cn(
-                "text-xs font-medium hidden sm:block",
-                currentStep >= step.id ? "text-violet-600" : "text-gray-400"
+                "hidden text-[10px] font-medium leading-none lg:block",
+                getLabelColor(currentStep, step.id)
               )}
             >
               {step.label}
@@ -40,8 +48,10 @@ export function StepProgress({ currentStep }: { currentStep: number }) {
           {i < STEPS.length - 1 && (
             <div
               className={cn(
-                "w-6 h-0.5 mx-1",
-                currentStep > step.id ? "bg-violet-600" : "bg-gray-200"
+                "mt-3.5 -translate-y-1/2 mx-1.5 h-0.5 flex-1 rounded-full transition-all duration-300",
+                currentStep > step.id
+                  ? "bg-linear-to-r from-rose-400 to-amber-400"
+                  : "bg-slate-200"
               )}
             />
           )}

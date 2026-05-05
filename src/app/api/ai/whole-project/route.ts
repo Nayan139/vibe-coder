@@ -149,10 +149,15 @@ function splitChanges(raw: Record<string, string>): {
   return { modifiedFiles, createdFiles };
 }
 
+function isEnvPath(filePath: string): boolean {
+  const base = filePath.split("/").pop() ?? filePath;
+  return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
+}
+
 const MODIFY_PROMPT = `You are a precise code modification AI.
 Return ONLY a valid JSON object where:
 - Keys are file paths for EXISTING files to modify (e.g. "src/app/page.tsx")
-- For NEW files, prefix with "CREATE:" (e.g. "CREATE:.env")
+- For NEW files, prefix with "CREATE:" (e.g. "CREATE:src/utils/newFile.ts")
 - Values are the COMPLETE new file content
 
 Rules:
@@ -160,7 +165,7 @@ Rules:
 - Only include files that need to change or be created.
 - Preserve existing functionality unless asked to change it.
 - Keep the same coding style as the original.
-- For .env files: use placeholder values like YOUR_KEY_HERE.`;
+- Never create or modify .env/.env.* files. Environment variables are managed in project settings.`;
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -326,13 +331,29 @@ Return modified files as JSON.`;
       formatted[fp] = await formatFile(fp, content);
     }
 
-    const allChanges: Record<string, string> = { ...formatted, ...createdFiles };
+    const safeModified = Object.fromEntries(
+      Object.entries(formatted).filter(([filePath]) => !isEnvPath(filePath))
+    );
+    const safeCreated = Object.fromEntries(
+      Object.entries(createdFiles).filter(([filePath]) => !isEnvPath(filePath))
+    );
+    const allChanges: Record<string, string> = { ...safeModified, ...safeCreated };
+    if (Object.keys(allChanges).length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "AI returned only environment-file changes. Env creation/edit from chatbot is disabled. Please manage env vars in project settings.",
+        },
+        { status: 422 }
+      );
+    }
 
     const summary = `I analyzed ${filesToRead.length} file${filesToRead.length !== 1 ? "s" : ""} and made the following changes:\n${
-      Object.keys(formatted).map((f) => `• ${f}`).join("\n")
+      Object.keys(safeModified).map((f) => `• ${f}`).join("\n")
     }${
-      Object.keys(createdFiles).length > 0
-        ? `\n\nNew files created:\n${Object.keys(createdFiles).map((f) => `• ${f} (NEW)`).join("\n")}`
+      Object.keys(safeCreated).length > 0
+        ? `\n\nNew files created:\n${Object.keys(safeCreated).map((f) => `• ${f} (NEW)`).join("\n")}`
         : ""
     }\n\nCheck the diff on the right and click "Apply Changes" to proceed.`;
 
@@ -396,18 +417,14 @@ Return modified files as JSON.`;
       }
     }
 
-    if (resolvedSessionId && Object.keys(createdFiles).length > 0) {
-      const isEnvPath = (p: string) => {
-        const base = p.split("/").pop() ?? p;
-        return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
-      };
+    if (resolvedSessionId && Object.keys(safeCreated).length > 0) {
       await supabase.from("created_files").insert(
-        Object.entries(createdFiles).map(([fp, content]) => ({
+        Object.entries(safeCreated).map(([fp, content]) => ({
           session_id: resolvedSessionId,
           project_id: projectId ?? null,
           file_path: fp,
           content,
-          is_env_file: isEnvPath(fp),
+          is_env_file: false,
           committed: false,
         }))
       );
@@ -416,8 +433,8 @@ Return modified files as JSON.`;
     return NextResponse.json({
       success: true,
       changes: allChanges,
-      modifiedFiles: formatted,
-      createdFiles,
+      modifiedFiles: safeModified,
+      createdFiles: safeCreated,
       fetchedFiles,
       filesAnalyzed: filesToRead,
       sessionId: resolvedSessionId,

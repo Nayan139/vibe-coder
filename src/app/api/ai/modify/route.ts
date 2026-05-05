@@ -7,7 +7,7 @@ const SYSTEM_PROMPT = `You are a precise code modification AI.
 The user will describe a UI or code change they want to make.
 You will return ONLY a valid JSON object where:
 - Keys are file paths for EXISTING files to modify (e.g. "src/app/page.tsx")
-- For NEW files, prefix the key with "CREATE:" (e.g. "CREATE:.env", "CREATE:src/utils/api.ts")
+- For NEW files, prefix the key with "CREATE:" (e.g. "CREATE:src/utils/api.ts")
 - Values are the COMPLETE new file content (not just the changed part)
 
 Rules:
@@ -15,10 +15,15 @@ Rules:
 - Only include files that actually need to change or be created.
 - Preserve all existing functionality unless asked to change it.
 - Keep the same coding style and patterns as the original.
-- For .env files: use placeholder values like YOUR_KEY_HERE, never real secrets.
+- Never create or modify .env/.env.* files. Environment variables are managed in project settings.
 
 Example output format:
-{"src/app/page.tsx": "complete file content here", "CREATE:.env": "API_KEY=YOUR_KEY_HERE"}`;
+{"src/app/page.tsx": "complete file content here", "CREATE:src/utils/api.ts": "export const api = {};"}`;
+
+function isEnvPath(filePath: string): boolean {
+  const base = filePath.split("/").pop() ?? filePath;
+  return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
+}
 
 function processAIChanges(changes: Record<string, string>): {
   modifiedFiles: Record<string, string>;
@@ -157,14 +162,32 @@ Return the modified files as JSON.`;
       formattedModified[filePath] = await formatFile(filePath, content);
     }
 
-    // Combine: modified (formatted) + created (raw, not formatted to preserve .env etc.)
-    const allChanges: Record<string, string> = { ...formattedModified, ...createdFiles };
+    // Filter out env-file edits/creates: env vars are DB-managed only.
+    const safeModified = Object.fromEntries(
+      Object.entries(formattedModified).filter(([filePath]) => !isEnvPath(filePath))
+    );
+    const safeCreated = Object.fromEntries(
+      Object.entries(createdFiles).filter(([filePath]) => !isEnvPath(filePath))
+    );
 
-    const assistantSummary = `I've made the following changes:\n${Object.keys(formattedModified)
+    // Combine: modified (formatted) + created (raw)
+    const allChanges: Record<string, string> = { ...safeModified, ...safeCreated };
+    if (Object.keys(allChanges).length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "AI returned only environment-file changes. Env creation/edit from chatbot is disabled. Please manage env vars in project settings.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const assistantSummary = `I've made the following changes:\n${Object.keys(safeModified)
       .map((f) => `• ${f}`)
       .join("\n")}${
-      Object.keys(createdFiles).length > 0
-        ? `\n\nNew files created:\n${Object.keys(createdFiles)
+      Object.keys(safeCreated).length > 0
+        ? `\n\nNew files created:\n${Object.keys(safeCreated)
             .map((f) => `• ${f} (NEW)`)
             .join("\n")}`
         : ""
@@ -258,17 +281,13 @@ Return the modified files as JSON.`;
     }
 
     // Persist newly created files to the created_files table (best-effort)
-    if (resolvedSessionId && Object.keys(createdFiles).length > 0) {
-      const isEnvPath = (p: string) => {
-        const base = p.split("/").pop() ?? p;
-        return base === ".env" || base.startsWith(".env.") || base.endsWith(".env");
-      };
-      const rows = Object.entries(createdFiles).map(([filePath, content]) => ({
+    if (resolvedSessionId && Object.keys(safeCreated).length > 0) {
+      const rows = Object.entries(safeCreated).map(([filePath, content]) => ({
         session_id: resolvedSessionId,
         project_id: projectId ?? null,
         file_path: filePath,
         content,
-        is_env_file: isEnvPath(filePath),
+        is_env_file: false,
         committed: false,
       }));
       const { error: cfErr } = await supabase.from("created_files").insert(rows);
@@ -278,8 +297,8 @@ Return the modified files as JSON.`;
     return NextResponse.json({
       success: true,
       changes: allChanges,
-      modifiedFiles: formattedModified,
-      createdFiles,
+      modifiedFiles: safeModified,
+      createdFiles: safeCreated,
       sessionId: resolvedSessionId,
     });
   } catch (err) {

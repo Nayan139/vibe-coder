@@ -17,13 +17,15 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
     .eq("user_id", user.id);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-[radial-gradient(900px_circle_at_5%_10%,rgba(244,63,94,0.04),transparent_50%),linear-gradient(160deg,#fafafa_0%,#f4f4f5_100%)]">
       <DashboardSidebar user={user} connections={connections ?? []} />
-      <main className="flex-1 min-w-0 overflow-auto min-h-0">
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto">
         <Suspense>
           <ConnectionToast />
         </Suspense>
-        <DashboardErrorBoundary>{children}</DashboardErrorBoundary>
+        <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8 [&:has([data-full-bleed-editor='true'])]:max-w-none [&:has([data-full-bleed-editor='true'])]:px-0 [&:has([data-full-bleed-editor='true'])]:py-2">
+          <DashboardErrorBoundary>{children}</DashboardErrorBoundary>
+        </div>
       </main>
     </div>
   );

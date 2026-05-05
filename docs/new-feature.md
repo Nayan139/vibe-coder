@@ -1,16 +1,16 @@
 # 🚀 VibeCode — AI-Powered No-Code Prototyping Platform
 
 > **Goal:** Build a platform where non-developers can connect their GitHub/GitLab repo, describe changes in plain English, preview results live, and raise a PR — all powered by AI.
-> **Total Phases:** 5 | **Total Steps:** 14 | **Phases 1–4: ✅ Complete | Phase 5: 🔲 In Progress**
+> **Total Phases:** 5 | **Total Steps:** 16 | **Phases 1–4: ✅ Complete | Phase 5: 🔲 In Progress**
 > **Stack:** Next.js 14, Supabase, GROQ / NVIDIA AI, GitHub API, GitLab API, WebContainers
 
 ---
 
 ## ENV Policy Update
 
-- ENV variables are managed in DB (`project_env_vars`) and injected before preview boot.
-- Creating/editing `.env` from chatbot prompts is no longer supported.
-- Any prior `.env` editor/diff flow is deprecated and removed.
+- ENV variables are now managed only through `project_env_vars` (DB-backed UI on repo detail page).
+- ENV values are injected before project clone/boot for preview flows.
+- Chatbot-based `.env` creation/editing is removed and not supported.
 
 ---
 
@@ -46,6 +46,8 @@
      - [Step 6: Multi-Prompt Sessions & Chat History](#-step-6--multi-prompt-sessions--chat-history)
      - [Step 7: LLM Model Switcher in Prompt Box](#-step-7--llm-model-switcher-in-prompt-box)
      - [Step 8: New Chat + Commit & Raise MR](#-step-8--new-chat--commit--raise-mr)
+     - [Step 9: Hot File Sync (Live Reload Without Restart) 🆕](#-step-9--hot-file-sync-live-reload-without-server-restart)
+     - [Step 10: Project-wise ENV Variable Manager 🆕](#-step-10--project-wise-env-variable-manager)
 6. [API Routes Reference](#api-routes-reference)
 7. [AI Model Usage Guide](#ai-model-usage-guide)
 8. [UI Component Checklist](#ui-component-checklist)
@@ -81,6 +83,8 @@ Select LLM model from prompt box dropdown  ← NEW Phase 5
 Type prompt → Send
       ↓
 AI modifies code → Prettier formats → Diff shows only changed lines
+      ↓
+Files hot-synced into WebContainer FS → iframe updates instantly  ← NEW Phase 5 Step 9
       ↓
 Live Preview: WebContainer runs the project in browser  ← NEW Phase 5
       ↓
@@ -118,6 +122,7 @@ Branch created → All accumulated changes pushed → PR raised ✅
 | Styling | Tailwind CSS + shadcn/ui | UI components |
 | Code Preview | react-diff-viewer-continued | Before/after code diff (changed lines only) |
 | Live Preview | WebContainers API 🆕 | Run project in browser — no server needed |
+| Hot File Sync | WebContainers FS API 🆕 | Write files into running container for instant HMR |
 | Code Formatting | Prettier 🆕 | Format AI output before showing diff |
 | Linting | ESLint + eslint-plugin-prettier 🆕 | Enforce code style |
 | Deployment | Vercel | Instant Next.js deployment |
@@ -241,12 +246,26 @@ create table created_files (          -- 🆕 Phase 5: new table
   created_at timestamptz default now()
 );
 
+-- Project ENV Variables (stored per project, never committed to git)
+create table project_env_vars (       -- 🆕 Phase 5 Step 10: new table
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references projects on delete cascade,
+  user_id uuid references auth.users on delete cascade,
+  key text not null,
+  value text not null,               -- store encrypted in production
+  is_secret boolean default false,   -- true = masked in UI (password input)
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(project_id, key)            -- one value per key per project
+);
+
 -- RLS
 alter table git_connections enable row level security;
 alter table projects enable row level security;
 alter table ai_sessions enable row level security;
 alter table chat_messages enable row level security;
 alter table created_files enable row level security;
+alter table project_env_vars enable row level security;
 
 create policy "Users see own connections" on git_connections for all using (auth.uid() = user_id);
 create policy "Users see own projects" on projects for all using (auth.uid() = user_id);
@@ -257,6 +276,7 @@ create policy "Users see own messages" on chat_messages for all using (
 create policy "Users see own created files" on created_files for all using (
   session_id in (select id from ai_sessions where user_id = auth.uid())
 );
+create policy "Users see own env vars" on project_env_vars for all using (auth.uid() = user_id);
 ```
 
 ---
@@ -306,20 +326,22 @@ NODE_ENV=development
 ## Phase-wise Execution Plan
 
 ```
-┌──────────────┬──────────────────┬─────────────────┬─────────────┬─────────────────────────────────────────────┐
-│  PHASE 1 ✅  │   PHASE 2 ✅     │   PHASE 3 ✅    │  PHASE 4 ✅ │  PHASE 5 🆕                                 │
-│  Foundation  │  Core AI         │  Git Automation  │  Ship It    │  Power Features                             │
-│  Hour 1–3    │  Hour 3–7        │  Hour 7–9        │  Hour 9–12  │  Post-Hackathon                             │
-├──────────────┼──────────────────┼─────────────────┼─────────────┼─────────────────────────────────────────────┤
-│  ✅ Auth     │  ✅ README Parse │  ✅ Push Branch  │  ✅ Polish  │  🔲 Step 1: File Creation + .env            │
-│  ✅ Dashboard│  ✅ AI Editor    │  ✅ Create PR    │  ✅ Testing │  🔲 Step 2: Run Command Override            │
-│  ✅ Git OAuth│  ✅ Diff Preview │                  │  ✅ Deploy  │  🔲 Step 3: File Chip Selector              │
-│              │                  │                  │             │  🔲 Step 4: Whole-Project AI Mode           │
-│              │                  │                  │             │  🎯 Step 5: Live Local Preview (MAIN GOAL)  │
-│              │                  │                  │             │  🔲 Step 6: Multi-Prompt Sessions           │
-│              │                  │                  │             │  🔲 Step 7: LLM Model Switcher in UI        │
-│              │                  │                  │             │  🔲 Step 8: New Chat + Commit & Raise MR    │
-└──────────────┴──────────────────┴─────────────────┴─────────────┴─────────────────────────────────────────────┘
+┌──────────────┬──────────────────┬─────────────────┬─────────────┬─────────────────────────────────────────────────┐
+│  PHASE 1 ✅  │   PHASE 2 ✅     │   PHASE 3 ✅    │  PHASE 4 ✅ │  PHASE 5 🆕                                     │
+│  Foundation  │  Core AI         │  Git Automation  │  Ship It    │  Power Features                                 │
+│  Hour 1–3    │  Hour 3–7        │  Hour 7–9        │  Hour 9–12  │  Post-Hackathon                                 │
+├──────────────┼──────────────────┼─────────────────┼─────────────┼─────────────────────────────────────────────────┤
+│  ✅ Auth     │  ✅ README Parse │  ✅ Push Branch  │  ✅ Polish  │  🔲 Step 1: File Creation + .env                │
+│  ✅ Dashboard│  ✅ AI Editor    │  ✅ Create PR    │  ✅ Testing │  🔲 Step 2: Run Command Override                │
+│  ✅ Git OAuth│  ✅ Diff Preview │                  │  ✅ Deploy  │  🔲 Step 3: File Chip Selector                  │
+│              │                  │                  │             │  🔲 Step 4: Whole-Project AI Mode               │
+│              │                  │                  │             │  🎯 Step 5: Live Local Preview (MAIN GOAL)      │
+│              │                  │                  │             │  🔲 Step 6: Multi-Prompt Sessions               │
+│              │                  │                  │             │  🔲 Step 7: LLM Model Switcher in UI            │
+│              │                  │                  │             │  🔲 Step 8: New Chat + Commit & Raise MR        │
+│              │                  │                  │             │  🔲 Step 9: Hot File Sync (No-Restart Reload)   │
+│              │                  │                  │             │  🔲 Step 10: Project-wise ENV Variable Manager  │
+└──────────────┴──────────────────┴─────────────────┴─────────────┴─────────────────────────────────────────────────┘
 ```
 
 ---
@@ -410,13 +432,16 @@ NODE_ENV=development
 ## Phase 5 — Power Features 🆕
 
 > **Status: IN PROGRESS**
-> **Outcome:** VibeCode becomes a fully capable local-first AI editor. Users create files, run projects live, chat across multiple turns, switch AI models, and raise PRs only when satisfied.
+> **Outcome:** VibeCode becomes a fully capable local-first AI editor. Users create files, run projects live, chat across multiple turns, switch AI models, and raise PRs only when satisfied. File changes from AI sync instantly to the running preview — no restarts needed.
 
 ```
 Build steps in this order:
-Step 5 (Live Preview) → Step 6 (Multi-Prompt) → Step 3 (Chips) → Step 7 (Model Switcher)
-→ Step 8 (Commit Panel) → Step 1 (.env Files) → Step 2 (Run Cmd) → Step 4 (Whole Project)
+Step 5 (Live Preview) → Step 9 (Hot File Sync) → Step 6 (Multi-Prompt) → Step 3 (Chips)
+→ Step 7 (Model Switcher) → Step 8 (Commit Panel) → Step 10 (ENV Manager) ← DO THIS EARLY
+→ Step 1 (.env AI creation) → Step 2 (Run Cmd) → Step 4 (Whole Project)
 ```
+
+> ⚠️ **Step 10 should be built right after Step 5** — ENV variables are needed for the WebContainer to boot projects that require secrets. Without them the dev server fails immediately.
 
 ---
 
@@ -566,8 +591,8 @@ export function EnvEditor({ content }: { content: string }) {
 #### ✅ Step 1 Done When:
 - [ ] AI can create new files — shown with "NEW" badge in diff viewer
 - [ ] Chatbot does not create or edit `.env` files
-- [ ] `.env` files written locally for WebContainer preview but excluded from git push
-- [ ] `created_files` table stores all new files per session
+- [ ] `.env` files are assembled from `project_env_vars` table (Step 10) before WebContainer boot — not stored as raw file content
+- [ ] `created_files` table stores all new non-env files per session
 
 ---
 
@@ -797,7 +822,7 @@ const changes = await callModifyAPI({ prompt, fileContents, projectContext });
 
 **Problem:** Users can see code diffs but not the running app. A non-developer needs to see the visual result to know if they're happy with the changes.
 
-**Solution:** Boot a WebContainer in the browser, run the project using the saved install/start commands, and show it in an embedded iframe. Auto-updates when AI applies changes.
+**Solution:** Boot a WebContainer in the browser, run the project using the saved install/start commands, and show it in an embedded iframe. Auto-updates when AI applies changes (see Step 9).
 
 #### Required Header in `next.config.js`
 
@@ -867,12 +892,6 @@ export async function startDevServer(
 
   wc.on('server-ready', (_, url) => onReady(url));
 }
-
-export async function updateFileInContainer(path: string, content: string) {
-  const wc = await getWebContainer();
-  await wc.fs.writeFile(path, content);
-  // Dev server hot-reloads automatically (Vite, Next.js, CRA all support this)
-}
 ```
 
 #### `components/LivePreview.tsx`
@@ -880,15 +899,17 @@ export async function updateFileInContainer(path: string, content: string) {
 ```typescript
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { mountProjectFiles, startDevServer, updateFileInContainer } from '@/lib/webcontainer';
+import { mountProjectFiles, startDevServer } from '@/lib/webcontainer';
+import { HotSyncIndicator } from './HotSyncIndicator';
 
 type Status = 'idle' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
 
-export function LivePreview({ allFiles, changedFiles, installCommand, startCommand }) {
+export function LivePreview({ allFiles, changedFiles, installCommand, startCommand, syncStatus, lastSyncedFiles }) {
   const [status, setStatus] = useState<Status>('idle');
   const [previewUrl, setPreviewUrl] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const addLog = (line: string) => setLogs(p => [...p.slice(-100), line]);
 
@@ -909,12 +930,6 @@ export function LivePreview({ allFiles, changedFiles, installCommand, startComma
     }
   }
 
-  // Hot-update files when AI makes changes
-  useEffect(() => {
-    if (status !== 'ready') return;
-    Object.entries(changedFiles).forEach(([path, content]) => updateFileInContainer(path, content));
-  }, [changedFiles, status]);
-
   return (
     <div className="flex flex-col h-full border rounded-xl overflow-hidden bg-gray-900">
       {/* Toolbar */}
@@ -926,6 +941,10 @@ export function LivePreview({ allFiles, changedFiles, installCommand, startComma
               <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" /> Live
             </span>
           )}
+
+          {/* Hot sync status indicator (Step 9) */}
+          <HotSyncIndicator status={syncStatus} lastSyncedFiles={lastSyncedFiles} />
+
           <button onClick={() => setShowLogs(v => !v)}
             className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-gray-700">
             {showLogs ? 'Hide Logs' : 'Logs'}
@@ -936,7 +955,7 @@ export function LivePreview({ allFiles, changedFiles, installCommand, startComma
           )}
           {status === 'ready' && (
             <button onClick={startPreview}
-              className="text-xs bg-gray-600 text-gray-300 px-3 py-1 rounded">↺ Restart</button>
+              className="text-xs bg-gray-600 text-gray-300 px-3 py-1 rounded">↺ Hard Restart</button>
           )}
           {['mounting','installing','starting'].includes(status) && (
             <span className="text-xs text-yellow-400">
@@ -958,7 +977,7 @@ export function LivePreview({ allFiles, changedFiles, installCommand, startComma
       {/* Iframe */}
       <div className="flex-1 bg-white">
         {status === 'ready' && previewUrl ? (
-          <iframe src={previewUrl} className="w-full h-full border-0" title="Live Preview" />
+          <iframe ref={iframeRef} src={previewUrl} className="w-full h-full border-0" title="Live Preview" />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
             {status === 'idle' && <>
@@ -1000,7 +1019,8 @@ export function LivePreview({ allFiles, changedFiles, installCommand, startComma
 │  📄 nav     │                      │  (horizontal scroll)           │
 │             │  [+ New Chat]        │  ── Live Preview ─────────── │
 │             │  [Commit & Raise MR] │  [▶ Start] [● Live] [Logs]   │
-│             │  (shows when ready)  │  ┌─────────────────────────┐  │
+│             │  (shows when ready)  │  [⚡ Syncing... / ✅ 2 reloaded]│
+│             │                      │  ┌─────────────────────────┐  │
 │             │                      │  │   iframe: running app    │  │
 │             │                      │  └─────────────────────────┘  │
 └─────────────┴──────────────────────┴─────────────────────────────────┘
@@ -1009,10 +1029,10 @@ export function LivePreview({ allFiles, changedFiles, installCommand, startComma
 #### ✅ Step 5 Done When:
 - [ ] "Start" button boots WebContainer and runs the project in browser
 - [ ] Project visible in iframe using the saved install/start commands
-- [ ] When AI applies changes → iframe hot-reloads automatically
 - [ ] Terminal log panel shows install/start output
 - [ ] Diff View and Live Preview are tabs on the right panel
 - [ ] Requires COOP/COEP headers — `next.config.js` updated
+- [ ] `iframeRef` wired up for plain-HTML fallback reload (Step 9)
 
 ---
 
@@ -1034,10 +1054,8 @@ const [accumulatedChanges, setAccumulatedChanges] = useState<Record<string, stri
 
 function applyNewChanges(newChanges: Record<string, string>) {
   setAccumulatedChanges(prev => ({ ...prev, ...newChanges }));
-  // Hot-update WebContainer if preview is running
-  if (previewStatus === 'ready') {
-    Object.entries(newChanges).forEach(([p, c]) => updateFileInContainer(p, c));
-  }
+  // Hot-sync into WebContainer (Step 9) — no restart needed
+  hotSyncChanges(newChanges);
 }
 
 // Send AI the CURRENT accumulated state as context (not baseline):
@@ -1083,7 +1101,7 @@ function ChatMessage({ message }) {
 - [ ] Diff viewer shows total change from original baseline (not just last prompt)
 - [ ] AI receives current accumulated file state as context
 - [ ] Chat messages show which files changed per prompt
-- [ ] WebContainer hot-reloads after each new change applied
+- [ ] WebContainer hot-reloads after each new change applied (via Step 9)
 
 ---
 
@@ -1292,6 +1310,720 @@ function CommitPanel({ accumulatedChanges, baseBranch, projectId, onSuccess }) {
 
 ---
 
+### 🆕 Step 9 — Hot File Sync (Live Reload Without Server Restart)
+
+**Problem:** When AI applies changes to files, the user currently has to restart the WebContainer dev server to see the updates reflected in the live preview iframe. This breaks the flow — non-developers shouldn't have to think about servers at all.
+
+**Solution:** Whenever AI applies changes to any file, write those files directly into the running WebContainer filesystem using `wc.fs.writeFile()`. Modern dev servers (Vite, Next.js, CRA) have built-in HMR (Hot Module Replacement) — they detect filesystem changes and push updates to the browser automatically, with zero restart needed.
+
+#### How It Works
+
+```
+AI returns changed files
+        ↓
+applyNewChanges() called
+        ↓
+Update React state (accumulatedChanges)
+        ↓
+Write each changed file into WebContainer FS  ← hotSyncFiles()
+        ↓
+Dev server detects file change via HMR watcher
+        ↓
+Browser iframe updates automatically ✅  (no restart!)
+```
+
+#### `lib/webcontainer.ts` — Hot Sync Helper (add to existing file)
+
+```typescript
+/**
+ * Write one or more files into the running WebContainer filesystem.
+ * The dev server's HMR watcher picks up changes automatically.
+ * No restart needed for Vite, Next.js, CRA, or Parcel projects.
+ */
+export async function hotSyncFiles(
+  files: Record<string, string>,
+  onSynced?: (path: string) => void
+): Promise<void> {
+  const wc = await getWebContainer();
+
+  await Promise.all(
+    Object.entries(files).map(async ([path, content]) => {
+      // Ensure parent directories exist before writing
+      const parts = path.split('/');
+      if (parts.length > 1) {
+        const dir = parts.slice(0, -1).join('/');
+        await wc.fs.mkdir(dir, { recursive: true }).catch(() => {
+          // Directory may already exist — silently ignore
+        });
+      }
+      await wc.fs.writeFile(path, content, 'utf-8');
+      onSynced?.(path);
+    })
+  );
+}
+```
+
+#### Integration in Editor State
+
+```typescript
+// editor page state
+const [syncedFiles, setSyncedFiles] = useState<Set<string>>(new Set());
+const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'done'>('idle');
+
+async function hotSyncChanges(newChanges: Record<string, string>) {
+  if (previewStatus !== 'ready') return; // only sync if preview is running
+
+  // .env files need a full restart — warn and skip hot sync for them
+  // The actual .env is assembled from project_env_vars table (Step 10),
+  // so if user adds/changes a key there, we restart rather than hot-sync
+  const envFilesChanged = Object.keys(newChanges).filter(p => p.includes('.env'));
+  if (envFilesChanged.length > 0) {
+    toast({
+      title: '⚠️ .env file changed',
+      description: 'Environment variables require a full server restart to take effect.',
+      action: <button onClick={startPreview}>Restart Now</button>,
+    });
+  }
+
+  // Only hot-sync non-.env files
+  const safeChanges = Object.fromEntries(
+    Object.entries(newChanges).filter(([p]) => !p.includes('.env'))
+  );
+  if (Object.keys(safeChanges).length === 0) return;
+
+  setSyncStatus('syncing');
+  await hotSyncFiles(safeChanges, (path) => {
+    setSyncedFiles(prev => new Set([...prev, path]));
+  });
+  setSyncStatus('done');
+  // Reset status after short delay for UX feedback
+  setTimeout(() => setSyncStatus('idle'), 2500);
+}
+
+async function applyNewChanges(newChanges: Record<string, string>) {
+  // 1. Update accumulated changes in React state
+  setAccumulatedChanges(prev => ({ ...prev, ...newChanges }));
+  // 2. Hot-sync into WebContainer (no restart!)
+  await hotSyncChanges(newChanges);
+}
+```
+
+#### `components/HotSyncIndicator.tsx`
+
+Show users when files have been silently pushed to the running preview:
+
+```typescript
+'use client';
+
+type SyncStatus = 'idle' | 'syncing' | 'done';
+
+export function HotSyncIndicator({
+  status,
+  lastSyncedFiles,
+}: {
+  status: SyncStatus;
+  lastSyncedFiles: string[];
+}) {
+  if (status === 'idle') return null;
+
+  return (
+    <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full transition-all
+      ${status === 'syncing' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : ''}
+      ${status === 'done'    ? 'bg-green-50  text-green-700  border border-green-200'  : ''}`}>
+
+      {status === 'syncing' && (
+        <>
+          <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+          Syncing changes to preview...
+        </>
+      )}
+
+      {status === 'done' && (
+        <>
+          <span className="w-2 h-2 rounded-full bg-green-400" />
+          Preview updated — {lastSyncedFiles.length} file{lastSyncedFiles.length !== 1 ? 's' : ''} hot-reloaded
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+#### Plain HTML / No-Bundler Fallback — Force Iframe Reload
+
+For projects without a bundler that don't support HMR, force the iframe to reload after sync:
+
+```typescript
+// In LivePreview.tsx — detect plain HTML projects and force-reload iframe
+const iframeRef = useRef<HTMLIFrameElement>(null);
+const isPlainHtmlProject = !allFiles['package.json']; // no package.json = no bundler
+
+useEffect(() => {
+  if (previewStatus !== 'ready' || !isPlainHtmlProject) return;
+  if (syncStatus === 'done' && iframeRef.current) {
+    // Force iframe reload after hot sync completes
+    iframeRef.current.src = iframeRef.current.src;
+  }
+}, [syncStatus, isPlainHtmlProject, previewStatus]);
+```
+
+#### HMR Compatibility by Framework
+
+| Framework | HMR Support | Restart Needed? | Notes |
+|---|---|---|---|
+| **Vite** (React, Vue, Svelte) | ✅ Automatic | Never | Fastest — sub-second updates |
+| **Next.js** (App / Pages Router) | ✅ Automatic | Never | Fast Refresh works out of the box |
+| **Create React App** | ✅ Automatic | Never | Webpack HMR — slightly slower |
+| **Parcel** | ✅ Automatic | Never | Works with WebContainer |
+| **Plain HTML + no bundler** | ⚠️ Iframe reload | Never | `iframeRef.src` trick above |
+| **`.env` files** | ❌ Not supported | Always | Toast warning + manual restart button |
+
+#### ✅ Step 9 Done When:
+- [ ] AI applies changes → `hotSyncFiles()` writes files into WebContainer FS
+- [ ] Vite / Next.js / CRA projects hot-reload in iframe with no restart
+- [ ] `HotSyncIndicator` shows "Syncing..." then "X files hot-reloaded" in the Live Preview toolbar
+- [ ] "Hard Restart" button still available as fallback (replaces old "Restart")
+- [ ] Plain HTML projects fall back to iframe `src` reload after sync
+- [ ] `.env` file changes show a toast warning and are excluded from hot sync
+- [ ] `syncStatus` and `lastSyncedFiles` props passed from editor page → `LivePreview`
+
+---
+
+### 🆕 Step 10 — Project-wise ENV Variable Manager
+
+**Problem:** `.env` files hold secrets (API keys, DB URLs, tokens) that must never be committed to git. Currently there's no structured way to store, manage, or inject these per project. AI-suggested `.env` placeholders are useless until the user fills in real values — and there's no good place in the UI to do this.
+
+**Solution:** Add a dedicated ENV Variable Manager UI that appears on the repo detail page — right after the user selects a branch and sets run commands. Variables are stored encrypted per project in the `project_env_vars` Supabase table. Before WebContainer boots, all saved variables are assembled into a `.env` file and written into the container. Variables are **never committed to git**.
+
+#### Where It Appears in the User Flow
+
+```
+/dashboard/repo/[id]
+        ↓
+① Select Branch           ← existing
+        ↓
+② Run Commands Card       ← Step 2
+        ↓
+③ ENV Variables Card      ← Step 10 (NEW — shown here, before entering editor)
+   [+ Add Variable]
+   KEY              VALUE          SECRET?
+   VITE_API_URL     http://...     [ ]
+   VITE_SECRET      ••••••••       [✓]
+        ↓
+④ [Open Editor →]         ← only enabled after env setup (or skipped)
+```
+
+#### Database — `project_env_vars` Table
+
+```sql
+-- Already added in DB Schema section above.
+-- Key points:
+--   unique(project_id, key)   → upsert by key, no duplicates
+--   is_secret boolean         → controls whether UI masks the value
+--   value text                → store encrypted at rest in production
+--                               (use Supabase Vault or pgcrypto for prod)
+```
+
+**Production encryption note:** For production, encrypt values with `pgcrypto` before storing:
+
+```sql
+-- Extension (enable once in Supabase dashboard):
+create extension if not exists pgcrypto;
+
+-- Encrypt on insert/update (use your own passphrase from env):
+insert into project_env_vars (project_id, user_id, key, value, is_secret)
+values (
+  $1, $2, $3,
+  pgp_sym_encrypt($4, current_setting('app.encryption_key')),
+  $5
+)
+on conflict (project_id, key) do update
+  set value = pgp_sym_encrypt(excluded.value, current_setting('app.encryption_key')),
+      updated_at = now();
+
+-- Decrypt on read:
+select key, pgp_sym_decrypt(value::bytea, current_setting('app.encryption_key')) as value
+from project_env_vars
+where project_id = $1;
+```
+
+#### API Routes for ENV Vars
+
+```
+GET  /api/projects/[id]/env-vars     → list all keys (values masked for secrets)
+POST /api/projects/[id]/env-vars     → upsert a variable (key + value + is_secret)
+DELETE /api/projects/[id]/env-vars/[key] → delete a variable
+GET  /api/projects/[id]/env-vars/dotenv  → assemble & return full .env file content
+                                           (server-side only — never sent to client as plaintext for secrets)
+```
+
+#### `app/api/projects/[id]/env-vars/route.ts`
+
+```typescript
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+// GET — list all vars for this project (mask secret values)
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { data, error } = await supabase
+    .from('project_env_vars')
+    .select('id, key, value, is_secret, updated_at')
+    .eq('project_id', params.id)
+    .eq('user_id', user.id)
+    .order('key');
+
+  if (error) return NextResponse.json({ error }, { status: 500 });
+
+  // Mask secret values before sending to client
+  const masked = data.map(v => ({
+    ...v,
+    value: v.is_secret ? '••••••••' : v.value,
+  }));
+
+  return NextResponse.json({ vars: masked });
+}
+
+// POST — upsert a variable
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { key, value, is_secret } = await req.json();
+
+  if (!key || typeof key !== 'string' || !/^[A-Z0-9_]+$/.test(key.toUpperCase())) {
+    return NextResponse.json({ error: 'Key must be uppercase alphanumeric with underscores' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('project_env_vars')
+    .upsert({
+      project_id: params.id,
+      user_id: user.id,
+      key: key.toUpperCase().trim(),
+      value: value ?? '',
+      is_secret: is_secret ?? false,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'project_id,key' });
+
+  if (error) return NextResponse.json({ error }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE — remove a variable by key
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { key } = await req.json();
+
+  const { error } = await supabase
+    .from('project_env_vars')
+    .delete()
+    .eq('project_id', params.id)
+    .eq('user_id', user.id)
+    .eq('key', key);
+
+  if (error) return NextResponse.json({ error }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+```
+
+#### `app/api/projects/[id]/env-vars/dotenv/route.ts`
+
+Assembles all saved variables into a `.env` file string — called server-side before WebContainer boot:
+
+```typescript
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const supabase = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // Fetch unmasked values (server-side only)
+  const { data, error } = await supabase
+    .from('project_env_vars')
+    .select('key, value')
+    .eq('project_id', params.id)
+    .eq('user_id', user.id)
+    .order('key');
+
+  if (error) return NextResponse.json({ error }, { status: 500 });
+
+  // Build .env file content
+  const dotenv = [
+    '# Auto-generated by VibeCode — do not commit',
+    ...data.map(v => `${v.key}=${v.value}`),
+  ].join('\n');
+
+  return new Response(dotenv, {
+    headers: { 'Content-Type': 'text/plain' },
+  });
+}
+```
+
+#### `components/EnvVarsCard.tsx` — The UI Component
+
+Shown on `/dashboard/repo/[id]` between RunCommandsCard and the "Open Editor" button:
+
+```typescript
+'use client';
+import { useState, useEffect } from 'react';
+import { Eye, EyeOff, Plus, Trash2, Lock, Globe } from 'lucide-react';
+
+type EnvVar = {
+  id: string;
+  key: string;
+  value: string;    // '••••••••' for secrets from server
+  is_secret: boolean;
+  updated_at: string;
+};
+
+type NewVar = { key: string; value: string; is_secret: boolean };
+
+export function EnvVarsCard({ projectId }: { projectId: string }) {
+  const [vars, setVars] = useState<EnvVar[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [newVar, setNewVar] = useState<NewVar>({ key: '', value: '', is_secret: false });
+  const [saving, setSaving] = useState(false);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+  const [error, setError] = useState('');
+
+  useEffect(() => { fetchVars(); }, [projectId]);
+
+  async function fetchVars() {
+    setLoading(true);
+    const res = await fetch(`/api/projects/${projectId}/env-vars`);
+    const { vars } = await res.json();
+    setVars(vars || []);
+    setLoading(false);
+  }
+
+  async function saveVar() {
+    if (!newVar.key.trim()) { setError('Key is required'); return; }
+    if (!/^[A-Za-z0-9_]+$/.test(newVar.key)) {
+      setError('Key can only contain letters, numbers, and underscores');
+      return;
+    }
+    setSaving(true); setError('');
+    await fetch(`/api/projects/${projectId}/env-vars`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: newVar.key.toUpperCase(),
+        value: newVar.value,
+        is_secret: newVar.is_secret,
+      }),
+    });
+    setNewVar({ key: '', value: '', is_secret: false });
+    setAdding(false);
+    setSaving(false);
+    fetchVars();
+  }
+
+  async function deleteVar(key: string) {
+    await fetch(`/api/projects/${projectId}/env-vars`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    fetchVars();
+  }
+
+  function toggleReveal(key: string) {
+    setRevealedKeys(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  return (
+    <div className="border rounded-xl bg-white shadow-sm overflow-hidden">
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🔐</span>
+          <div>
+            <h3 className="font-semibold text-sm text-gray-800">Environment Variables</h3>
+            <p className="text-xs text-gray-400">Stored securely · never committed to git</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {vars.length > 0 && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+              {vars.length} variable{vars.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          <button
+            onClick={() => { setAdding(true); setError(''); }}
+            className="flex items-center gap-1.5 text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600">
+            <Plus size={12} /> Add Variable
+          </button>
+        </div>
+      </div>
+
+      {/* Add new variable form */}
+      {adding && (
+        <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+          <p className="text-xs font-medium text-blue-700 mb-2">New Environment Variable</p>
+          <div className="flex gap-2 items-start">
+            {/* Key */}
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 mb-1 block">Key</label>
+              <input
+                value={newVar.key}
+                onChange={e => setNewVar(p => ({ ...p, key: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') }))}
+                placeholder="VITE_API_URL"
+                className="w-full font-mono text-sm border rounded-lg px-3 py-1.5 bg-white uppercase placeholder:normal-case"
+                autoFocus
+              />
+            </div>
+            {/* Value */}
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 mb-1 block">Value</label>
+              <input
+                type={newVar.is_secret ? 'password' : 'text'}
+                value={newVar.value}
+                onChange={e => setNewVar(p => ({ ...p, value: e.target.value }))}
+                placeholder="your-value-here"
+                className="w-full font-mono text-sm border rounded-lg px-3 py-1.5 bg-white"
+              />
+            </div>
+            {/* Secret toggle */}
+            <div className="shrink-0">
+              <label className="text-xs text-gray-500 mb-1 block">Secret?</label>
+              <button
+                onClick={() => setNewVar(p => ({ ...p, is_secret: !p.is_secret }))}
+                className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border transition-all
+                  ${newVar.is_secret
+                    ? 'bg-orange-50 border-orange-200 text-orange-600'
+                    : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                {newVar.is_secret ? <Lock size={12} /> : <Globe size={12} />}
+                {newVar.is_secret ? 'Secret' : 'Public'}
+              </button>
+            </div>
+          </div>
+          {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
+          <div className="flex gap-2 mt-2">
+            <button onClick={saveVar} disabled={saving}
+              className="text-xs bg-blue-500 text-white px-4 py-1.5 rounded-lg disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save Variable'}
+            </button>
+            <button onClick={() => { setAdding(false); setError(''); setNewVar({ key: '', value: '', is_secret: false }); }}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Variables list */}
+      {loading ? (
+        <div className="px-4 py-6 text-center text-sm text-gray-400">Loading...</div>
+      ) : vars.length === 0 && !adding ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-2xl mb-2">🔑</p>
+          <p className="text-sm text-gray-500 mb-1">No environment variables yet</p>
+          <p className="text-xs text-gray-400">
+            Add variables your project needs to run (API keys, DB URLs, etc.)
+          </p>
+        </div>
+      ) : (
+        <div className="divide-y">
+          {vars.map(v => (
+            <div key={v.key} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 group">
+              {/* Secret/public badge */}
+              <span className={`shrink-0 ${v.is_secret ? 'text-orange-400' : 'text-gray-300'}`}>
+                {v.is_secret ? <Lock size={13} /> : <Globe size={13} />}
+              </span>
+
+              {/* Key */}
+              <span className="font-mono text-sm text-gray-700 w-52 shrink-0 truncate">
+                {v.key}
+              </span>
+
+              {/* Value */}
+              <span className={`flex-1 font-mono text-sm truncate
+                ${v.is_secret && !revealedKeys.has(v.key) ? 'text-gray-400 tracking-widest' : 'text-gray-600'}`}>
+                {v.is_secret && !revealedKeys.has(v.key) ? '••••••••' : v.value}
+              </span>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                {v.is_secret && (
+                  <button onClick={() => toggleReveal(v.key)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+                    {revealedKeys.has(v.key) ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                )}
+                <button onClick={() => deleteVar(v.key)}
+                  className="p-1.5 text-gray-400 hover:text-red-500 rounded">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Footer note */}
+      {vars.length > 0 && (
+        <div className="px-4 py-2 bg-gray-50 border-t">
+          <p className="text-xs text-gray-400">
+            🔒 These variables are injected into the WebContainer as a <code className="font-mono">.env</code> file at runtime — never pushed to your repository.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+#### Inject ENV Vars into WebContainer Before Boot
+
+Before `startDevServer()` is called in Step 5, fetch the assembled `.env` and write it into the container:
+
+```typescript
+// In the editor page — before calling startPreview():
+async function getProjectEnvFile(projectId: string): Promise<string> {
+  const res = await fetch(`/api/projects/${projectId}/env-vars/dotenv`);
+  if (!res.ok) return ''; // no vars set — that's fine
+  return res.text();
+}
+
+async function startPreview() {
+  try {
+    setStatus('mounting');
+    const merged = { ...allFiles, ...accumulatedChanges };
+
+    // 🆕 Inject project ENV vars as .env before mounting
+    const envContent = await getProjectEnvFile(projectId);
+    if (envContent.trim()) {
+      merged['.env'] = envContent;
+      // Also support .env.local for Next.js projects
+      if (merged['package.json']?.includes('"next"')) {
+        merged['.env.local'] = envContent;
+      }
+      addLog('🔐 Environment variables loaded from project settings');
+    }
+
+    const wc = await mountProjectFiles(merged);
+    // ... rest of startPreview unchanged
+  }
+}
+```
+
+#### Updated Repo Detail Page Layout
+
+```
+/dashboard/repo/[id]
+
+┌─────────────────────────────────────────────────────────────┐
+│  📁 my-awesome-repo                    [⚙️ Settings]        │
+│  github.com/user/my-awesome-repo                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ① Branch                                                   │
+│  ┌──────────────────────────────┐                          │
+│  │ main ▾                       │                          │
+│  └──────────────────────────────┘                          │
+│                                                             │
+│  ② Run Commands                  AI-parsed from README      │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Install   npm install                                 │  │
+│  │ Start     npm run dev                                 │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ③ Environment Variables         Stored securely · not git  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ 🔐  VITE_API_URL      http://api.example.com    🗑️  │  │
+│  │ 🔒  VITE_SECRET       ••••••••              👁️  🗑️  │  │
+│  │ 🔐  DATABASE_URL      postgres://...           🗑️  │  │
+│  │                                                      │  │
+│  │ [+ Add Variable]                                     │  │
+│  │                                                      │  │
+│  │ 🔒 Injected as .env at runtime · never committed    │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                             │
+│                         [Open Editor →]                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### AI-Suggested ENV Keys (Optional Enhancement)
+
+When AI parses the README and detects references to environment variables, surface them as suggestions in the card:
+
+```typescript
+// In /api/ai/parse-readme route — add env key detection:
+const ENV_KEY_REGEX = /\b([A-Z][A-Z0-9_]{2,})\b(?=.*=|.*your[- ]|.*replace)/g;
+
+function extractEnvKeysFromReadme(readmeText: string): string[] {
+  const matches = readmeText.matchAll(ENV_KEY_REGEX);
+  const keys = [...new Set([...matches].map(m => m[1]))];
+  // Filter out common non-env words
+  const ignore = ['README', 'TODO', 'NOTE', 'WARNING', 'IMPORTANT', 'HTTP', 'HTTPS'];
+  return keys.filter(k => !ignore.includes(k) && k.length > 3);
+}
+
+// Return alongside install/start commands:
+return {
+  installCommand: '...',
+  startCommand: '...',
+  suggestedEnvKeys: extractEnvKeysFromReadme(readmeText),
+  // e.g. ['VITE_API_KEY', 'DATABASE_URL', 'NEXTAUTH_SECRET']
+};
+```
+
+```typescript
+// In EnvVarsCard — show suggestions if any keys aren't yet saved:
+{suggestedEnvKeys.filter(k => !vars.find(v => v.key === k)).length > 0 && (
+  <div className="px-4 py-2 bg-amber-50 border-t border-amber-100">
+    <p className="text-xs text-amber-700 font-medium mb-1.5">
+      💡 README mentions these variables — add them:
+    </p>
+    <div className="flex flex-wrap gap-1.5">
+      {suggestedEnvKeys
+        .filter(k => !vars.find(v => v.key === k))
+        .map(k => (
+          <button key={k}
+            onClick={() => { setNewVar({ key: k, value: '', is_secret: true }); setAdding(true); }}
+            className="font-mono text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded hover:bg-amber-200">
+            + {k}
+          </button>
+        ))}
+    </div>
+  </div>
+)}
+```
+
+#### ✅ Step 10 Done When:
+- [ ] `project_env_vars` table created with correct RLS policies
+- [ ] `EnvVarsCard` appears on `/dashboard/repo/[id]` between RunCommandsCard and Open Editor button
+- [ ] User can add a variable with key + value + secret toggle
+- [ ] Key is auto-uppercased and validated (alphanumeric + underscores only)
+- [ ] Secret values show `••••••••` by default with reveal toggle (👁️)
+- [ ] Variables persist per project across sessions (stored in Supabase)
+- [ ] `/api/projects/[id]/env-vars/dotenv` assembles a `.env` file server-side
+- [ ] WebContainer boot fetches and injects the `.env` before `mountProjectFiles()`
+- [ ] Next.js projects also get `.env.local`
+- [ ] Variables are **never** included in git push (excluded at `CommitPanel` level)
+- [ ] README-suggested env keys appear as one-click suggestions
+- [ ] Changing a variable and restarting WebContainer picks up new values
+
+---
+
 ## API Routes Reference
 
 | Route | Method | Phase | Purpose |
@@ -1308,6 +2040,10 @@ function CommitPanel({ accumulatedChanges, baseBranch, projectId, onSuccess }) {
 | `/api/git/push` | POST | Phase 3+5 | Create branch + push accumulated changes |
 | `/api/git/create-pr` | POST | Phase 3+5 | Create PR/MR — end-of-session action |
 | `/api/projects/update-commands` | POST | Phase 5 | Save custom run/install commands |
+| `/api/projects/[id]/env-vars` | GET | Phase 5 Step 10 | List project env vars (secrets masked) |
+| `/api/projects/[id]/env-vars` | POST | Phase 5 Step 10 | Upsert an env variable |
+| `/api/projects/[id]/env-vars` | DELETE | Phase 5 Step 10 | Delete an env variable by key |
+| `/api/projects/[id]/env-vars/dotenv` | GET | Phase 5 Step 10 | Assemble `.env` file (server-side only) |
 | `/api/sessions/new` | POST | Phase 5 | Create new chat session |
 | `/api/sessions/accumulate` | POST | Phase 5 | Save accumulated changes to session |
 
@@ -1350,6 +2086,8 @@ Server-side defaults via env vars. Users can override per-prompt from the model 
 | `<ChatHistory />` | `components/ChatHistory.tsx` | Phase 5 Step 6 | 🔴 High | 🔲 Todo |
 | `<CommitPanel />` | `components/CommitPanel.tsx` | Phase 5 Step 8 | 🔴 High | 🔲 Todo |
 | `<NewChatButton />` | `components/NewChatButton.tsx` | Phase 5 Step 8 | 🟡 Medium | 🔲 Todo |
+| `<HotSyncIndicator />` | `components/HotSyncIndicator.tsx` | Phase 5 Step 9 | 🔴 High | 🔲 Todo |
+| `<EnvVarsCard />` | `components/EnvVarsCard.tsx` | Phase 5 Step 10 | 🔴 High | 🔲 Todo |
 
 ---
 
@@ -1365,12 +2103,16 @@ Server-side defaults via env vars. Users can override per-prompt from the model 
 | GitHub API rate limiting | Phase 1–3 | Low | Cache repo/file data, show friendly error |
 | Supabase RLS blocks queries | Phase 1 | Medium | Test with service role key first |
 | OAuth callback URL mismatch on deploy | Phase 1 | High | Update callback URLs after every deploy |
+| HMR not triggering after `wc.fs.writeFile()` | Phase 5 Step 9 | Low | Verify dev server watches the correct paths; fall back to iframe reload |
+| `.env` hot sync silently fails or corrupts env state | Phase 5 Step 9 | Low | Always exclude `.env` from hot sync; require full restart for env changes |
+| ENV var values exposed in client bundle | Phase 5 Step 10 | Medium | Secret values only returned unmasked via server-side `/dotenv` route — never via client-side listing API |
+| User forgets to add ENV vars before starting preview | Phase 5 Step 10 | High | Show warning banner in LivePreview if server crashes and `project_env_vars` is empty |
 
 ### Phase 5 Build Priority
 
 > Build in this order to maximise impact per hour:
 >
-> `Step 5 (Live Preview)` 🎯 → `Step 6 (Multi-Prompt)` → `Step 3 (Chips)` → `Step 7 (Model Switcher)` → `Step 8 (Commit Panel)` → `Step 1 (.env)` → `Step 2 (Run Cmd)` → `Step 4 (Whole Project)`
+> `Step 5 (Live Preview)` 🎯 → `Step 10 (ENV Manager)` 🔐 → `Step 9 (Hot File Sync)` ⚡ → `Step 6 (Multi-Prompt)` → `Step 3 (Chips)` → `Step 7 (Model Switcher)` → `Step 8 (Commit Panel)` → `Step 1 (.env AI creation)` → `Step 2 (Run Cmd)` → `Step 4 (Whole Project)`
 
 ---
 
@@ -1410,8 +2152,10 @@ Server-side defaults via env vars. Users can override per-prompt from the model 
 | v1.6 | Day 0 | Auth clarification — email+password only; GitHub/GitLab OAuth is repo access only |
 | v1.7 | Day 0 | Restructured into 4 phases with hour labels and done-when checklists |
 | v1.8 | Day 1 | **Phase 5 added** — 8 power features: file creation + .env handling, run command override, file chip selector, whole-project AI mode, WebContainer live preview (main goal), multi-prompt sessions with accumulated changes, LLM model switcher in UI, new chat + commit & raise MR. DB schema updated: `created_files` table, `run_command`/`install_command` on projects, `accumulated_changes`/`llm_model` on sessions, `changes_snapshot`/`selected_files` on messages. |
+| v1.9 | Day 2 | **Step 9 added** — Hot File Sync: AI-applied file changes are written directly into the running WebContainer FS via `hotSyncFiles()`, triggering HMR in Vite/Next.js/CRA with zero restart. Added `HotSyncIndicator` component, `.env` change toast warning, and plain-HTML iframe reload fallback. Updated `LivePreview` to accept `syncStatus`/`lastSyncedFiles` props. Build priority updated to place Step 9 immediately after Step 5. |
+| v2.0 | Day 2 | **Step 10 added** — Project-wise ENV Variable Manager: `project_env_vars` Supabase table stores env vars per project (never committed). `EnvVarsCard` UI added to repo detail page between RunCommandsCard and Open Editor. Supports key/value entry, secret masking (password input + reveal toggle), upsert, delete. Server-side `/dotenv` route assembles `.env` file — injected into WebContainer before boot. README-based env key suggestions. Production encryption guide via pgcrypto. Step count updated to 16. |
 
 ---
 
 *Stack: Next.js 14 + Supabase + GROQ / NVIDIA AI + GitHub/GitLab API + WebContainers*
-*5 Phases · 14 Steps · Phases 1–4 Complete ✅ · Phase 5 In Progress 🔲*
+*5 Phases · 16 Steps · Phases 1–4 Complete ✅ · Phase 5 In Progress 🔲*

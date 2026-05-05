@@ -16,31 +16,27 @@ export interface ChatMessage {
 }
 
 interface AIChatProps {
-  messages: ChatMessage[];
-  prompt: string;
-  onPromptChange: (value: string) => void;
-  onSubmit: () => void;
-  loading: boolean;
-  disabled?: boolean;
-  // Phase 5: multi-select chips
-  selectedFiles?: string[];
-  onRemoveFile?: (path: string) => void;
-  onClearAllFiles?: () => void;
-  // Phase 5: model selector
-  selectedModel?: ModelOption;
-  onModelChange?: (model: ModelOption) => void;
-  // Phase 5: new chat
-  hasAccumulatedChanges?: boolean;
-  onNewChat?: () => void;
-  // Phase 5: commit panel
-  accumulatedChanges?: Record<string, string>;
-  baseBranch?: string;
-  connectionId?: string;
-  repoFullName?: string;
-  lastPrompt?: string;
-  sessionId?: string | null;
-  onCommitSuccess?: (prUrl: string) => void;
-  onDiscardAllChanges?: () => void;
+  readonly messages: ChatMessage[];
+  readonly prompt: string;
+  readonly onPromptChange: (value: string) => void;
+  readonly onSubmit: () => void;
+  readonly loading: boolean;
+  readonly disabled?: boolean;
+  readonly selectedFiles?: string[];
+  readonly onRemoveFile?: (path: string) => void;
+  readonly onClearAllFiles?: () => void;
+  readonly selectedModel?: ModelOption;
+  readonly onModelChange?: (model: ModelOption) => void;
+  readonly hasAccumulatedChanges?: boolean;
+  readonly onNewChat?: () => void;
+  readonly accumulatedChanges?: Record<string, string>;
+  readonly baseBranch?: string;
+  readonly connectionId?: string;
+  readonly repoFullName?: string;
+  readonly lastPrompt?: string;
+  readonly sessionId?: string | null;
+  readonly onCommitSuccess?: (prUrl: string) => void;
+  readonly onDiscardAllChanges?: () => void;
 }
 
 export function AIChat({
@@ -97,14 +93,23 @@ export function AIChat({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
+  function messageCount() {
+    if (messages.length === 0) return "";
+    return `${messages.length} message${messages.length === 1 ? "" : "s"}`;
+  }
+
+  function emptyStateSubtext() {
+    if (selectedFiles !== undefined) {
+      return "Click files in the tree to add them as context chips, then describe what to change.";
+    }
+    return "Describe what you want to change in plain English. Click files in the tree to load them, then tell the AI what to modify.";
+  }
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Chat header with New Chat button */}
+    <div className="flex h-full flex-col bg-white">
       {onNewChat && (
-        <div className="flex items-center justify-between px-4 pt-2 pb-1 shrink-0">
-          <span className="text-xs text-gray-400">
-            {messages.length > 0 ? `${messages.length} message${messages.length !== 1 ? "s" : ""}` : ""}
-          </span>
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 pb-2 pt-2.5">
+          <span className="text-xs font-medium text-slate-500">{messageCount()}</span>
           <NewChatButton
             hasChanges={hasAccumulatedChanges ?? false}
             onNewChat={onNewChat}
@@ -112,19 +117,14 @@ export function AIChat({
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-12">
-            <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center mb-4">
-              <Bot className="w-6 h-6 text-violet-600" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-rose-500 to-amber-400 shadow-sm shadow-rose-200 mb-4">
+              <Bot className="h-6 w-6 text-white" />
             </div>
-            <h3 className="font-semibold text-gray-800 mb-1">AI Code Editor</h3>
-            <p className="text-sm text-gray-400 max-w-xs">
-              {selectedFiles !== undefined
-                ? "Click files in the tree to add them as context chips, then describe what to change."
-                : "Describe what you want to change in plain English. Click files in the tree to load them, then tell the AI what to modify."}
-            </p>
+            <h3 className="font-semibold text-slate-800 mb-1">AI Code Editor</h3>
+            <p className="text-sm text-slate-400 max-w-xs">{emptyStateSubtext()}</p>
             <div className="mt-6 space-y-2">
               {[
                 "Change the hero title color to blue",
@@ -134,7 +134,7 @@ export function AIChat({
                 <button
                   key={example}
                   onClick={() => onPromptChange(example)}
-                  className="block w-full text-left text-xs bg-gray-50 hover:bg-violet-50 hover:text-violet-700 text-gray-500 px-3 py-2 rounded-lg border border-gray-200 transition-colors"
+                  className="block w-full text-left text-xs bg-slate-50 hover:bg-rose-50 hover:text-rose-600 text-slate-500 px-3 py-2 rounded-lg border border-slate-200 transition-colors cursor-pointer"
                 >
                   &quot;{example}&quot;
                 </button>
@@ -142,22 +142,21 @@ export function AIChat({
             </div>
           </div>
         ) : (
-          messages.map((msg, i) => (
-            <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+          messages.map((msg, index) => (
+            <div key={`${msg.role}-${index}-${msg.content.slice(0, 20)}`} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "assistant" && (
-                <div className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center shrink-0 mt-0.5">
-                  <Bot className="w-4 h-4 text-violet-600" />
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 mt-0.5">
+                  <Bot className="h-4 w-4 text-rose-500" />
                 </div>
               )}
               <div
-                className={`max-w-[80%] px-3 py-2 rounded-xl text-sm leading-relaxed ${
+                className={`max-w-[82%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
                   msg.role === "user"
-                    ? "bg-violet-600 text-white rounded-br-sm"
-                    : "bg-gray-100 text-gray-800 rounded-bl-sm"
+                    ? "rounded-br-sm bg-linear-to-r from-fuchsia-600 to-orange-400 text-white"
+                    : "rounded-bl-sm border border-slate-200 bg-slate-50 text-slate-800"
                 }`}
               >
                 <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
-                {/* Per-message file change chips */}
                 {msg.changesSnapshot && Object.keys(msg.changesSnapshot).length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {Object.keys(msg.changesSnapshot).map((path) => (
@@ -172,8 +171,8 @@ export function AIChat({
                 )}
               </div>
               {msg.role === "user" && (
-                <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center shrink-0 mt-0.5">
-                  <User className="w-4 h-4 text-gray-500" />
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 mt-0.5">
+                  <User className="h-4 w-4 text-slate-500" />
                 </div>
               )}
             </div>
@@ -184,7 +183,6 @@ export function AIChat({
         <div ref={bottomRef} />
       </div>
 
-      {/* Commit panel — shown when there are accumulated changes */}
       {showCommitPanel && (
         <div className="px-4 pb-1 shrink-0">
           {onDiscardAllChanges && (
@@ -200,10 +198,10 @@ export function AIChat({
                   onDiscardAllChanges();
                   setConfirmDiscardAll(false);
                 }}
-                className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                className={`cursor-pointer text-xs px-2.5 py-1 rounded-md border transition-colors ${
                   confirmDiscardAll
                     ? "border-red-300 text-red-600 bg-red-50"
-                    : "border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-200"
+                    : "border-slate-200 text-slate-500 hover:border-red-200 hover:text-red-500"
                 }`}
               >
                 {confirmDiscardAll ? "Confirm discard all" : "Discard all changes"}
@@ -211,29 +209,27 @@ export function AIChat({
             </div>
           )}
           <CommitPanel
-            accumulatedChanges={accumulatedChanges!}
-            baseBranch={baseBranch!}
-            connectionId={connectionId!}
-            repoFullName={repoFullName!}
+            accumulatedChanges={accumulatedChanges}
+            baseBranch={baseBranch}
+            connectionId={connectionId}
+            repoFullName={repoFullName}
             lastPrompt={lastPrompt ?? ""}
             sessionId={sessionId}
-            onSuccess={onCommitSuccess!}
+            onSuccess={onCommitSuccess}
           />
         </div>
       )}
 
-      {/* Prompt input area */}
-      <div className="border-t border-gray-100 px-4 py-3 shrink-0">
-        {/* File chips row */}
+      <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
         {selectedFiles !== undefined && (
           <div className="mb-2">
             {hasChips ? (
-              <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-gray-100">
-                <Paperclip className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-100">
+                <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 {selectedFiles.map((path) => (
                   <span
                     key={path}
-                    className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-2 py-0.5 rounded-full"
+                    className="flex items-center gap-1 bg-rose-50 border border-rose-200 text-rose-600 text-xs px-2 py-0.5 rounded-full"
                   >
                     {path.split("/").pop()}
                     {onRemoveFile && (
@@ -249,21 +245,21 @@ export function AIChat({
                 {onClearAllFiles && (
                   <button
                     onClick={onClearAllFiles}
-                    className="text-xs text-gray-400 hover:text-red-400 transition-colors ml-1"
+                    className="cursor-pointer text-xs text-slate-400 hover:text-red-400 transition-colors ml-1"
                   >
                     Clear all
                   </button>
                 )}
               </div>
             ) : (
-              <p className="text-xs text-gray-400 pb-1.5 border-b border-gray-100">
+              <p className="text-xs text-slate-400 pb-1.5 border-b border-slate-100">
                 No files selected — AI will review the entire project
               </p>
             )}
           </div>
         )}
 
-        <div className="flex gap-2 items-end">
+        <div className="flex w-full items-end gap-2">
           <textarea
             ref={textareaRef}
             value={prompt}
@@ -274,24 +270,24 @@ export function AIChat({
             onKeyDown={handleKeyDown}
             placeholder="Describe what you want to change… (Enter to send)"
             disabled={loading || disabled}
-            rows={1}
-            className="flex-1 resize-none px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50 min-h-[40px] max-h-40"
+            rows={2}
+            className="min-h-12 max-h-40 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm leading-5 focus:border-fuchsia-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-400/20 disabled:bg-slate-50 disabled:opacity-50"
           />
-          <div className="flex flex-col gap-1 shrink-0">
-            {selectedModel && onModelChange && (
-              <ModelSelector selected={selectedModel} onChange={onModelChange} />
-            )}
+          <div className="flex w-[10%] min-w-[84px] max-w-[120px] shrink-0 flex-col gap-1.5">
             <Button
               size="sm"
               onClick={onSubmit}
               disabled={loading || disabled || !prompt.trim()}
-              className="bg-violet-600 hover:bg-violet-700 text-white h-10 w-10 p-0"
+              className="h-10 w-full cursor-pointer bg-linear-to-r from-fuchsia-600 to-orange-400 p-0 text-white transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
+            {selectedModel && onModelChange && (
+              <ModelSelector selected={selectedModel} onChange={onModelChange} />
+            )}
           </div>
         </div>
-        <p className="text-xs text-gray-400 mt-1.5">
+        <p className="text-xs text-slate-400 mt-1.5">
           {disabled
             ? "Load files from the tree first to give AI context."
             : "Shift+Enter for new line"}

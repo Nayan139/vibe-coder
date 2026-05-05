@@ -1,5 +1,5 @@
 export interface ModelOption {
-  provider: 'groq' | 'nvidia';
+  provider: 'groq' | 'nvidia' | 'gemini';
   model: string;
   label: string;
   badge: string;
@@ -34,6 +34,20 @@ export const MODEL_OPTIONS: ModelOption[] = [
     label: 'Llama 3.1 70B',
     badge: 'NVIDIA',
     note: 'Balanced',
+  },
+  {
+    provider: 'gemini',
+    model: 'gemini-2.0-flash-lite',
+    label: 'Gemini 2.0 Flash Lite',
+    badge: 'GEMINI',
+    note: 'Free · Fastest',
+  },
+  {
+    provider: 'gemini',
+    model: 'gemini-2.0-flash',
+    label: 'Gemini 2.0 Flash',
+    badge: 'GEMINI',
+    note: 'Free · Fast',
   },
 ];
 

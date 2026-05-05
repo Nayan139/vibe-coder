@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, GitBranch, Loader2, FolderGit2 } from "lucide-react";
@@ -13,6 +13,8 @@ import { StepProgress } from "@/components/StepProgress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEFAULT_MODEL, MODEL_OPTIONS, type ModelOption } from "@/lib/models";
+import { hotSyncFiles, isWebContainerBooted } from "@/lib/webcontainer";
+import type { SyncStatus } from "@/components/HotSyncIndicator";
 
 interface EditClientProps {
   connectionId: string;
@@ -82,6 +84,11 @@ export function EditClient({
   const [step, setStep] = useState<Step>("edit");
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [repoTreePaths, setRepoTreePaths] = useState<string[]>([]);
+  const [previewKey] = useState(() => crypto.randomUUID());
+
+  // ── Step 9: Hot sync state ────────────────────────────────────────────────
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncedFiles, setSyncedFiles] = useState<string[]>([]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const loadedFiles = new Set(Object.keys(fileContents));
@@ -318,15 +325,48 @@ export function EditClient({
     }
   }
 
+  // ── Step 9: Hot sync ─────────────────────────────────────────────────────
+  async function hotSyncChanges(newChanges: Record<string, string>) {
+    // Only sync if a WebContainer instance is already running
+    if (!isWebContainerBooted()) return;
+
+    const envFiles = Object.keys(newChanges).filter((p) => p.includes(".env"));
+    if (envFiles.length > 0) {
+      toast.warning(".env file changed — restart the preview to apply environment variable changes.", {
+        action: { label: "OK", onClick: () => undefined },
+      });
+    }
+
+    const safeChanges = Object.fromEntries(
+      Object.entries(newChanges).filter(([p]) => !p.includes(".env"))
+    );
+    if (Object.keys(safeChanges).length === 0) return;
+
+    setSyncStatus("syncing");
+    setSyncedFiles([]);
+    try {
+      await hotSyncFiles(safeChanges, (path) => {
+        setSyncedFiles((prev) => [...prev, path]);
+      });
+      setSyncStatus("done");
+      setTimeout(() => setSyncStatus("idle"), 2500);
+    } catch {
+      setSyncStatus("idle");
+    }
+  }
+
   // ── Apply / Discard ───────────────────────────────────────────────────────
   function handleApplyChanges() {
     // Merge latest changes into fileContents (so AI has updated context next prompt)
     setFileContents((prev) => ({ ...prev, ...latestChanges }));
     // Merge into accumulated changes
     setAccumulatedChanges((prev) => ({ ...prev, ...latestChanges }));
+    const snapshot = { ...latestChanges };
     setLatestChanges({});
     setStep("edit");
     toast.success("Changes applied and accumulated. Keep prompting or commit when ready.");
+    // Fire-and-forget hot sync into WebContainer FS
+    void hotSyncChanges(snapshot);
   }
 
   function handleDiscardChanges() {
@@ -402,29 +442,33 @@ export function EditClient({
 
   const diffChanges = step === "review" ? latestChanges : accumulatedChanges;
   const previewBaseFiles = { ...fileContents, ...baselineFiles };
+  const previewEditedFiles = useMemo(
+    () => ({ ...accumulatedChanges, ...latestChanges }),
+    [accumulatedChanges, latestChanges]
+  );
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div data-full-bleed-editor="true" className="flex h-screen flex-col overflow-hidden bg-[radial-gradient(1200px_circle_at_15%_-10%,rgba(217,70,239,0.10),transparent_40%),radial-gradient(900px_circle_at_90%_0%,rgba(251,146,60,0.10),transparent_40%),linear-gradient(180deg,#fafafa_0%,#f6f7fb_100%)]">
       {/* Top bar */}
-      <header className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 border-b border-gray-200 bg-white shrink-0">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200/80 bg-white/85 px-4 py-3 backdrop-blur-xl sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
           size="sm"
           onClick={() =>
             router.push(`/dashboard/repo/${connectionId}/${encodeURIComponent(repoFullName)}`)
           }
-          className="gap-2 text-gray-500 h-8"
+          className="h-8 cursor-pointer gap-2 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
 
-        <div className="w-px h-5 bg-gray-200 mx-1" />
+        <div className="w-px h-5 bg-slate-200 mx-1" />
 
         <div className="flex items-center gap-2 min-w-0">
-          <FolderGit2 className="w-4 h-4 text-gray-400 shrink-0" />
-          <span className="text-sm font-medium text-gray-700 truncate">{repoName}</span>
-          <div className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
+          <FolderGit2 className="w-4 h-4 text-slate-400 shrink-0" />
+          <span className="text-sm font-medium text-slate-700 truncate">{repoName}</span>
+          <div className="flex items-center gap-1 text-xs text-slate-400 shrink-0">
             <GitBranch className="w-3 h-3" />
             <span>{branch}</span>
           </div>
@@ -434,28 +478,28 @@ export function EditClient({
         </div>
 
         {hasAccumulatedChanges && (
-          <div className="flex items-center gap-1 text-xs text-green-600 font-medium shrink-0">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+          <div className="flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-600">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
             {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} accumulated
           </div>
         )}
 
         {loadingFile && (
-          <Loader2 className="w-4 h-4 animate-spin text-violet-500 shrink-0" />
+          <Loader2 className="h-4 w-4 animate-spin shrink-0 text-rose-500" />
         )}
 
-        <div className="w-full sm:w-auto sm:ml-auto flex justify-start sm:justify-end min-w-0 overflow-x-auto pb-0.5">
+        <div className="w-full sm:w-auto sm:ml-auto flex justify-start sm:justify-end min-w-0 sm:min-w-[320px] lg:min-w-115">
           <StepProgress currentStep={stepNumber} />
         </div>
       </header>
 
       {/* Three-panel editor */}
-      <div className="flex flex-col xl:flex-row flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-2 overflow-hidden px-0 py-2">
         {/* Left: File Tree */}
-        <aside className="w-full xl:w-60 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col min-h-0 max-h-[34vh] xl:max-h-none overflow-hidden">
-          <div className="px-3 pt-3 pb-2 border-b border-gray-100 shrink-0">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Files</p>
-            <p className="text-xs text-gray-400 mt-0.5">Click to add as context</p>
+        <aside className="hidden w-56 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:flex xl:flex-col">
+          <div className="shrink-0 border-b border-slate-100 bg-slate-50/70 px-3 pb-2 pt-3">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files</p>
+            <p className="text-xs text-slate-400 mt-0.5">Click to add as context</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             <FileTree
@@ -471,7 +515,7 @@ export function EditClient({
         </aside>
 
         {/* Center: AI Chat */}
-        <div className="flex-1 min-h-0 min-w-0 border-b xl:border-b-0 xl:border-r border-gray-200 bg-white flex flex-col overflow-hidden max-h-[50vh] xl:max-h-none">
+        <div className="flex w-[24rem] min-h-0 min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm 2xl:w-[26rem]">
           <div className="flex-1 overflow-hidden">
             <AIChat
               messages={messages}
@@ -504,15 +548,15 @@ export function EditClient({
         </div>
 
         {/* Right: Diff Preview */}
-        <div className="w-full xl:w-[45%] xl:max-w-[50%] xl:shrink-0 bg-white flex flex-col min-h-0 flex-1 overflow-hidden">
-          <Tabs defaultValue="diff" className="flex h-full flex-col overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <Tabs defaultValue="preview" className="flex h-full w-full flex-col overflow-hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 pb-2 pt-3">
               <TabsList variant="line">
                 <TabsTrigger value="diff">Diff View</TabsTrigger>
                 <TabsTrigger value="preview">Live Preview</TabsTrigger>
               </TabsList>
               {hasAccumulatedChanges && step !== "review" && (
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-slate-400">
                   {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} changed total
                 </span>
               )}
@@ -530,11 +574,19 @@ export function EditClient({
 
             <TabsContent value="preview" className="flex-1 min-h-0 overflow-hidden p-3">
               <LivePreview
-                allFiles={previewBaseFiles}
-                changedFiles={accumulatedChanges}
+                previewKey={previewKey}
+                connectionId={connectionId}
+                repoFullName={repoFullName}
+                branch={branch}
+                provider={provider}
+                workspaceFiles={previewBaseFiles}
+                editedFiles={previewEditedFiles}
                 installCommand={_installCommand}
                 startCommand={_startCommand}
                 repoTreePaths={repoTreePaths}
+                projectId={projectId ?? undefined}
+                syncStatus={syncStatus}
+                lastSyncedFiles={syncedFiles}
               />
             </TabsContent>
           </Tabs>

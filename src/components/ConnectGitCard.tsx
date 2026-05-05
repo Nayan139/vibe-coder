@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { GitBranch, ArrowRight } from "lucide-react";
 
 interface ConnectGitCardProps {
@@ -20,45 +19,52 @@ export function ConnectGitCard({ hasConnections }: Readonly<ConnectGitCardProps>
   if (hasConnections) return null;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-100 gap-6">
-      <div className="text-center max-w-sm">
-        <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-violet-100 to-blue-100 flex items-center justify-center mx-auto mb-4">
-          <GitBranch className="w-8 h-8 text-violet-600" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2">Connect your Git account</h2>
-        <p className="text-gray-500 text-sm leading-relaxed">
-          Connect GitHub or GitLab to grant VibeCode access to your repositories. This is
-          separate from your login — it lets AI read and write your code.
-        </p>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-4">
-        <a href="/api/auth/github">
-          <Button className="gap-2 bg-gray-900 hover:bg-gray-800 text-white border-0 px-6">
-            <GithubIcon className="w-4 h-4" />
-            Connect GitHub
-            <ArrowRight className="w-4 h-4" />
-          </Button>
-        </a>
-        <a href="/api/auth/gitlab">
-          <Button variant="outline" className="gap-2 px-6 text-orange-600 border-orange-200 hover:bg-orange-50">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z" />
-            </svg>
-            Connect GitLab
-            <ArrowRight className="w-4 h-4" />
-          </Button>
-        </a>
-      </div>
-
-      <Card className="border-dashed border-gray-200 max-w-sm w-full">
-        <CardContent className="py-4 px-5">
-          <p className="text-xs text-gray-400 text-center leading-relaxed">
-            We only request the minimum required permissions to read files and create branches/PRs on
-            your behalf. We never store your private code.
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-rose-500 to-amber-400" />
+      <div className="absolute inset-0 bg-[radial-gradient(700px_circle_at_10%_10%,rgba(244,63,94,0.05),transparent_60%)]" />
+      <div className="relative flex min-h-120 flex-col items-center justify-center gap-7 px-6 py-14">
+        <div className="max-w-sm text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-linear-to-br from-rose-500 to-amber-400 shadow-md shadow-rose-200">
+            <GitBranch className="h-7 w-7 text-white" />
+          </div>
+          <h2 className="mb-3 text-2xl font-bold tracking-tight text-slate-900">
+            Connect your Git account
+          </h2>
+          <p className="text-sm leading-relaxed text-slate-500">
+            Connect GitHub or GitLab to grant VibeCode access to your repositories. This lets AI
+            read and write your code — separate from your login.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <a href="/api/auth/github">
+            <Button className="cursor-pointer gap-2 border-0 bg-slate-900 px-6 text-white transition-all duration-200 hover:bg-slate-800 hover:shadow-md">
+              <GithubIcon className="h-4 w-4" />
+              Connect GitHub
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </a>
+          <a href="/api/auth/gitlab">
+            <Button
+              variant="outline"
+              className="cursor-pointer gap-2 border-orange-200 px-6 text-orange-600 transition-all duration-200 hover:border-orange-300 hover:bg-orange-50"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z" />
+              </svg>
+              Connect GitLab
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </a>
+        </div>
+
+        <div className="w-full max-w-sm rounded-xl border border-rose-100 bg-rose-50/40 px-5 py-3">
+          <p className="text-center text-xs leading-relaxed text-slate-500">
+            We only request the minimum required permissions to read files and create branches/PRs
+            on your behalf. We never store your private code.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
