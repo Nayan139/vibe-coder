@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { FileTree } from "@/components/FileTree";
 import { AIChat, type ChatMessage } from "@/components/AIChat";
 import { DiffViewer } from "@/components/DiffViewer";
+import { LivePreview } from "@/components/LivePreview";
 import { StepProgress } from "@/components/StepProgress";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEFAULT_MODEL, type ModelOption } from "@/lib/models";
 
 interface EditClientProps {
@@ -59,6 +61,7 @@ export function EditClient({
   const [lastPrompt, setLastPrompt] = useState("");
   const [step, setStep] = useState<Step>("edit");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [repoTreePaths, setRepoTreePaths] = useState<string[]>([]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const loadedFiles = new Set(Object.keys(fileContents));
@@ -346,6 +349,7 @@ export function EditClient({
         );
 
   const diffChanges = step === "review" ? latestChanges : accumulatedChanges;
+  const previewBaseFiles = { ...fileContents, ...baselineFiles };
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -409,6 +413,7 @@ export function EditClient({
               onToggleFile={handleToggleFile}
               selectedFiles={selectedFiles}
               loadedFiles={loadedFiles}
+              onTreePathsChange={setRepoTreePaths}
             />
           </div>
         </aside>
@@ -447,25 +452,39 @@ export function EditClient({
 
         {/* Right: Diff Preview */}
         <div className="w-full xl:w-[45%] xl:max-w-[50%] xl:shrink-0 bg-white flex flex-col min-h-0 flex-1 overflow-hidden">
-          <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              {step === "review" ? "Review Changes" : "Accumulated Diff"}
-            </p>
-            {hasAccumulatedChanges && step !== "review" && (
-              <span className="text-xs text-gray-400">
-                {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} changed total
-              </span>
-            )}
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <DiffViewer
-              originalFiles={diffOriginals}
-              changedFiles={diffChanges}
-              onApply={step === "review" ? handleApplyChanges : undefined}
-              onDiscard={step === "review" ? handleDiscardChanges : undefined}
-              showActions={step === "review"}
-            />
-          </div>
+          <Tabs defaultValue="diff" className="flex h-full flex-col overflow-hidden">
+            <div className="px-4 pt-3 pb-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
+              <TabsList variant="line">
+                <TabsTrigger value="diff">Diff View</TabsTrigger>
+                <TabsTrigger value="preview">Live Preview</TabsTrigger>
+              </TabsList>
+              {hasAccumulatedChanges && step !== "review" && (
+                <span className="text-xs text-gray-400">
+                  {Object.keys(accumulatedChanges).length} file{Object.keys(accumulatedChanges).length !== 1 ? "s" : ""} changed total
+                </span>
+              )}
+            </div>
+
+            <TabsContent value="diff" className="flex-1 min-h-0 overflow-hidden">
+              <DiffViewer
+                originalFiles={diffOriginals}
+                changedFiles={diffChanges}
+                onApply={step === "review" ? handleApplyChanges : undefined}
+                onDiscard={step === "review" ? handleDiscardChanges : undefined}
+                showActions={step === "review"}
+              />
+            </TabsContent>
+
+            <TabsContent value="preview" className="flex-1 min-h-0 overflow-hidden p-3">
+              <LivePreview
+                allFiles={previewBaseFiles}
+                changedFiles={accumulatedChanges}
+                installCommand={_installCommand}
+                startCommand={_startCommand}
+                repoTreePaths={repoTreePaths}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

@@ -21,6 +21,7 @@ interface FileTreeProps {
   selectedFile?: string;
   selectedFiles?: string[];
   loadedFiles?: Set<string>;
+  onTreePathsChange?: (paths: string[]) => void;
 }
 
 interface TreeNode {
@@ -192,6 +193,7 @@ export function FileTree({
   selectedFile,
   selectedFiles,
   loadedFiles,
+  onTreePathsChange,
 }: FileTreeProps) {
   const [rootItems, setRootItems] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -224,6 +226,20 @@ export function FileTree({
       void fetchRoot();
     });
   }, [fetchRoot]);
+
+  useEffect(() => {
+    if (!onTreePathsChange) return;
+
+    const paths: string[] = [];
+    const walk = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        paths.push(node.path);
+        if (node.children && node.children.length > 0) walk(node.children);
+      }
+    };
+    walk(rootItems);
+    onTreePathsChange(paths);
+  }, [rootItems, onTreePathsChange]);
 
   if (loading) {
     return (
