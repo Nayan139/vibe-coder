@@ -17,7 +17,7 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSignup(e: React.FormEvent) {
+  async function handleSignup(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (password.length < 8) {
@@ -31,11 +31,25 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({ email, password });
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-      if (error) {
-        toast.error(error.message);
+      const body = await res.json();
+
+      if (!res.ok) {
+        toast.error(body.error ?? "Something went wrong. Please try again.");
+        return;
+      }
+
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (signInError) {
+        toast.error("Account created but sign-in failed. Please log in manually.");
+        router.push("/login");
         return;
       }
 
