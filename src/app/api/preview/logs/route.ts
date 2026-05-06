@@ -100,6 +100,27 @@ export async function POST(request: Request) {
     async start(controller) {
       const encoder = new TextEncoder();
       const log = (message: string) => sse(controller, encoder, "log", { message });
+      const closeWithReady = (previewUrl: string, sandboxId: string) => {
+        sse(controller, encoder, "ready", { previewUrl, sandboxId });
+      };
+
+      const isPreviewHealthy = async (
+        previewUrl: string,
+        trafficAccessToken: string | undefined
+      ): Promise<boolean> => {
+        try {
+          const headers: Record<string, string> = { Accept: "text/html,*/*" };
+          if (trafficAccessToken) headers["e2b-traffic-access-token"] = trafficAccessToken;
+          const res = await fetch(previewUrl, {
+            headers,
+            redirect: "follow",
+            signal: AbortSignal.timeout(12_000),
+          });
+          return res.ok || res.status === 304 || res.status === 404;
+        } catch {
+          return false;
+        }
+      };
 
       try {
         const prev = previewSandboxes.get(previewKey);
@@ -108,7 +129,14 @@ export async function POST(request: Request) {
           return;
         }
         if (prev && prev.userId === user.id) {
-          log("Stopping previous preview session…");
+          log("Checking existing preview sandbox…");
+          const healthy = await isPreviewHealthy(prev.previewUrl, prev.sandbox.trafficAccessToken);
+          if (healthy) {
+            log("Reusing warm sandbox — preview is already ready.");
+            closeWithReady(prev.previewUrl, prev.sandbox.sandboxId);
+            return;
+          }
+          log("Previous sandbox is unhealthy; recreating preview…");
           await Sandbox.kill(prev.sandbox.sandboxId, { apiKey }).catch(() => {});
           previewSandboxes.delete(previewKey);
         }
@@ -226,7 +254,7 @@ export async function POST(request: Request) {
         log(`Preview URL (port ${actualPort}): ${previewUrl}`);
 
         previewSandboxes.set(previewKey, { sandbox, previewUrl, userId: user.id });
-        sse(controller, encoder, "ready", { previewUrl, sandboxId: sandbox.sandboxId });
+        closeWithReady(previewUrl, sandbox.sandboxId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         sse(controller, encoder, "error", { message });

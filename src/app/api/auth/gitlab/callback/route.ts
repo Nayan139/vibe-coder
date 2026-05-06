@@ -20,16 +20,18 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${appUrl}/dashboard?error=invalid_state`);
   }
 
+  const tokenParams = new URLSearchParams({
+    client_id: process.env.GITLAB_CLIENT_ID ?? "",
+    client_secret: process.env.GITLAB_CLIENT_SECRET ?? "",
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: `${appUrl}/api/auth/gitlab/callback`,
+  });
+
   const tokenRes = await fetch("https://gitlab.com/oauth/token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: process.env.GITLAB_CLIENT_ID,
-      client_secret: process.env.GITLAB_CLIENT_SECRET,
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: `${appUrl}/api/auth/gitlab/callback`,
-    }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: tokenParams.toString(),
   });
 
   if (!tokenRes.ok) {
