@@ -1,5 +1,5 @@
 export interface ModelOption {
-  provider: 'groq' | 'nvidia' | 'gemini';
+  provider: 'groq' | 'nvidia' | 'gemini' | 'claude';
   model: string;
   label: string;
   badge: string;
@@ -48,6 +48,20 @@ export const MODEL_OPTIONS: ModelOption[] = [
     label: 'Gemini 2.0 Flash',
     badge: 'GEMINI',
     note: 'Free · Fast',
+  },
+  {
+    provider: 'claude',
+    model: 'claude-haiku-4-5-20251001',
+    label: 'Claude Haiku 4.5',
+    badge: 'CLAUDE',
+    note: 'Fastest',
+  },
+  {
+    provider: 'claude',
+    model: 'claude-sonnet-4-6',
+    label: 'Claude Sonnet 4.6',
+    badge: 'CLAUDE',
+    note: 'Smart',
   },
 ];
 

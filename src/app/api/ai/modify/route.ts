@@ -117,17 +117,29 @@ User request: ${prompt}
 Return the modified files as JSON.`;
 
   try {
-    const text = await callAI(
-      [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMessage },
-      ],
-      {
+    const aiMessages = [
+      { role: "system" as const, content: SYSTEM_PROMPT },
+      { role: "user" as const, content: userMessage },
+    ];
+
+    let text: string;
+    try {
+      text = await callAI(aiMessages, {
         model: isLargeRequest ? "agent" : "primary",
         overrideProvider,
         overrideModel,
+      });
+    } catch (primaryError) {
+      // If an override provider/model was selected and fails, retry with env-default provider.
+      if (overrideProvider || overrideModel) {
+        console.warn("AI override failed, retrying with default provider/model:", primaryError);
+        text = await callAI(aiMessages, {
+          model: isLargeRequest ? "agent" : "primary",
+        });
+      } else {
+        throw primaryError;
       }
-    );
+    }
 
     // Strip markdown fences if AI wrapped in them
     let clean = text.trim();
