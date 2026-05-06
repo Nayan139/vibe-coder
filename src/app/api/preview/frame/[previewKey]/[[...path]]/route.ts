@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { Sandbox } from "e2b";
 import { previewSandboxes } from "@/lib/e2b-preview-store";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,7 +32,24 @@ async function proxyHandler(
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  const entry = previewSandboxes.get(previewKey);
+  let entry = previewSandboxes.get(previewKey);
+  if (!entry) {
+    const sandboxId = request.nextUrl.searchParams.get("sandboxId")?.trim();
+    const previewUrlFromQuery = request.nextUrl.searchParams.get("previewUrl")?.trim();
+    const apiKey = process.env.E2B_API_KEY?.trim();
+
+    // Recover sandbox binding when this request lands on a fresh server instance.
+    if (sandboxId && previewUrlFromQuery && apiKey) {
+      try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
+        entry = { sandbox, previewUrl: previewUrlFromQuery, userId: user.id };
+        previewSandboxes.set(previewKey, entry);
+      } catch {
+        // Fall through to user-facing "preview not available" state.
+      }
+    }
+  }
+
   if (!entry || entry.userId !== user.id) {
     return new Response(
       `<!doctype html><html><body style="font-family:sans-serif;padding:2rem">

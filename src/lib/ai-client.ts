@@ -41,6 +41,51 @@ function resolveGroqModel(model: string): string {
   return aliasMap[normalized] ?? normalized;
 }
 
+function resolveModelForProvider(provider: string, model: string): string {
+  const normalized = model.trim();
+
+  if (provider === "groq") {
+    return resolveGroqModel(normalized);
+  }
+
+  if (provider === "claude") {
+    if (normalized.startsWith("claude-")) {
+      return normalized;
+    }
+
+    // Gracefully recover from legacy/non-Claude model IDs in env config.
+    const aliasMap: Record<string, string> = {
+      "meta/llama-3.1-8b-instruct": "claude-haiku-4-5-20251001",
+      "meta/llama-3.1-70b-instruct": "claude-sonnet-4-6",
+      "meta/llama-3.3-70b-instruct": "claude-sonnet-4-6",
+      "nvidia/llama-3.1-nemotron-70b-instruct": "claude-sonnet-4-6",
+      "nvidia/llama-3.1-nemotron-nano-8b-instruct": "claude-haiku-4-5-20251001",
+      "llama3-70b-8192": "claude-sonnet-4-6",
+      "llama3-8b-8192": "claude-haiku-4-5-20251001",
+      "gemini-2.0-flash": "claude-sonnet-4-6",
+      "gemini-2.0-flash-lite": "claude-haiku-4-5-20251001",
+    };
+
+    return aliasMap[normalized] ?? "claude-sonnet-4-6";
+  }
+
+  if (provider === "gemini") {
+    if (normalized.startsWith("gemini-")) {
+      return normalized;
+    }
+    return "gemini-2.0-flash";
+  }
+
+  if (provider === "nvidia") {
+    if (normalized.startsWith("meta/") || normalized.startsWith("nvidia/")) {
+      return normalized;
+    }
+    return "meta/llama-3.1-70b-instruct";
+  }
+
+  return normalized;
+}
+
 export async function callAI(messages: AIMessage[], options: AIOptions = {}): Promise<string> {
   const provider = options.overrideProvider || process.env.LLM_PROVIDER || 'groq';
   const modelKey = options.model || 'primary';
@@ -57,12 +102,13 @@ export async function callAI(messages: AIMessage[], options: AIOptions = {}): Pr
     agent:   Number.parseInt(process.env.LLM_MAX_TOKENS_AGENT || '6000'),
   };
 
-  const model = options.overrideModel || modelMap[modelKey];
+  const configuredModel = options.overrideModel || modelMap[modelKey];
+  const model = resolveModelForProvider(provider, configuredModel);
   const maxTokens = options.maxTokens ?? tokenMap[modelKey];
   const temperature = options.temperature ?? Number.parseFloat(process.env.LLM_TEMPERATURE || '0.1');
 
   if (provider === 'groq') {
-    return callGroq(messages, resolveGroqModel(model), maxTokens, temperature);
+    return callGroq(messages, model, maxTokens, temperature);
   }
   if (provider === 'nvidia') return callNvidia(messages, model, maxTokens, temperature);
   if (provider === 'gemini') return callGemini(messages, model, maxTokens, temperature);

@@ -63,7 +63,7 @@ function stripAnsi(line: string): string {
 async function consumeE2BPreviewStream(
   body: Record<string, unknown>,
   onLog: (line: string) => void,
-  onReady: (url: string) => void,
+  onReady: (url: string, sandboxId?: string) => void,
   onError: (message: string) => void
 ) {
   const res = await fetch("/api/preview/logs", {
@@ -98,9 +98,9 @@ async function consumeE2BPreviewStream(
       const dataRaw = dataLines.join("");
       if (!dataRaw) continue;
       try {
-        const payload = JSON.parse(dataRaw) as { message?: string; previewUrl?: string };
+        const payload = JSON.parse(dataRaw) as { message?: string; previewUrl?: string; sandboxId?: string };
         if (event === "log" && payload.message) onLog(payload.message);
-        if (event === "ready" && payload.previewUrl) onReady(payload.previewUrl);
+        if (event === "ready" && payload.previewUrl) onReady(payload.previewUrl, payload.sandboxId);
         if (event === "error") onError(payload.message || "Preview error");
       } catch {
         onLog(dataRaw);
@@ -136,6 +136,7 @@ export function LivePreview({
 
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [previewUrl, setPreviewUrl] = useState("");
+  const [sandboxId, setSandboxId] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -219,6 +220,7 @@ export function LivePreview({
   async function startE2B() {
     setLogs([]);
     setPreviewUrl("");
+    setSandboxId("");
     setErrorMessage("");
     setStatus("booting");
     didAutoReloadRef.current = false;
@@ -249,9 +251,10 @@ export function LivePreview({
           overlayFiles: { ...envOverlay, ...editedFiles },
         },
         addLog,
-        (url) => {
+        (url, readySandboxId) => {
           sawReady = true;
           setPreviewUrl(url);
+          setSandboxId(readySandboxId ?? "");
           setStatus("ready");
           addLog(`Ready: ${url}`);
         },
@@ -522,7 +525,13 @@ export function LivePreview({
           <iframe
             key={iframeKey}
             ref={iframeRef}
-            src={engine === "e2b" ? `/api/preview/frame/${previewKey}/` : previewUrl}
+            src={
+              engine === "e2b"
+                ? `/api/preview/frame/${previewKey}/?previewUrl=${encodeURIComponent(previewUrl)}&sandboxId=${encodeURIComponent(
+                    sandboxId
+                  )}`
+                : previewUrl
+            }
             className="h-full w-full border-0"
             title="Live Preview"
           />
