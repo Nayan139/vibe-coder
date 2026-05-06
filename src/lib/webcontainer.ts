@@ -88,6 +88,26 @@ async function getDepsFingerprint(wc: WebContainer, cwd: string): Promise<string
   return `${packageJson}\n---\n${packageLock}\n---\n${npmrc}`;
 }
 
+/**
+ * Patch the start command so the dev server binds on 0.0.0.0 instead of
+ * localhost — WebContainers require this for the server-ready event to fire.
+ * Reads package.json from the already-mounted container to detect the framework.
+ */
+async function normalizeStartCommand(wc: WebContainer, cwd: string, cmd: string): Promise<string> {
+  const pkg = await readFileOrEmpty(wc, `${cwd}/package.json`);
+  const hasVite = pkg.includes('"vite"');
+  const hasNext = pkg.includes('"next"');
+
+  if (hasVite && !cmd.includes("--host")) {
+    return `${cmd} --host 0.0.0.0`;
+  }
+  if (hasNext && !cmd.includes("-H") && !cmd.includes("--hostname")) {
+    return cmd.replace(/\bnext\s+dev\b/, "next dev -H 0.0.0.0");
+  }
+
+  return cmd;
+}
+
 function getInstallCommand(
   install: { bin: string; args: string[] },
   hasPackageLock: boolean
@@ -235,7 +255,9 @@ export async function startDevServer(
     activeServerProcess = null;
   }
 
-  const start = splitCommand(startCmd);
+  const patchedStartCmd = await normalizeStartCommand(wc, cwd, startCmd);
+  if (patchedStartCmd !== startCmd) onLog(`Patched start command: ${patchedStartCmd}`);
+  const start = splitCommand(patchedStartCmd);
   onPhase?.("starting");
   const serverProcess = await wc.spawn(start.bin, start.args, { cwd });
   serverProcess.output.pipeTo(new WritableStream({ write: (line) => onLog(String(line)) }));

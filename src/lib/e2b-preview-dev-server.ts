@@ -415,8 +415,14 @@ export async function waitForPreviewDevServer(
         );
 
         const previewUrl = `https://${sandbox.getHost(routablePort)}`;
-        const publicDeadline = Date.now() + 45_000;
+        // Wait up to 90 s for the app to return a good response.
+        // We do NOT accept HTTP 5xx here — that means the app is still compiling or
+        // has an error. We keep polling so the frontend only gets "ready" when the
+        // iframe will actually show content, not a blank Turbopack compilation page.
+        const publicDeadline = Date.now() + 90_000;
         let pubAttempt = 0;
+        let lastHttpStatus = 0;
+        onLog?.(`Checking public URL: ${previewUrl} …`);
         while (Date.now() < publicDeadline) {
           pubAttempt += 1;
           try {
@@ -427,17 +433,27 @@ export async function waitForPreviewDevServer(
               signal: AbortSignal.timeout(12_000),
               headers,
             });
-            if (res.ok || res.status === 304 || res.status === 404 || res.status >= 500) {
-              onLog?.(`Public preview URL responded (HTTP ${res.status}).`);
+            lastHttpStatus = res.status;
+            if (res.ok || res.status === 304 || res.status === 404) {
+              onLog?.(`Public preview URL ready (HTTP ${res.status}).`);
               return routablePort;
             }
+            if (res.status >= 500) {
+              if (pubAttempt === 1) {
+                onLog?.(`HTTP ${res.status} — Next.js is still compiling, waiting…`);
+              }
+              // keep polling
+            }
           } catch {
-            /* tunnel warming */
+            /* tunnel still warming up */
           }
-          if (pubAttempt === 1) onLog?.(`Checking ${previewUrl} …`);
-          await new Promise((r) => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 3_000));
         }
-        onLog?.("Public URL slow to answer; continuing with discovered port (try refresh).");
+        // 90 s elapsed — the app may have a genuine error; show it anyway so the
+        // user can see the Next.js error overlay and debug.
+        onLog?.(
+          `App returned HTTP ${lastHttpStatus || "?"} after 90 s — opening preview (check for app errors).`
+        );
         return routablePort;
       }
     } else if (attempt % 8 === 0) {

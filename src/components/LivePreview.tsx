@@ -35,6 +35,10 @@ interface LivePreviewProps {
   lastSyncedFiles?: string[];
 }
 
+function isWebContainerSupported(): boolean {
+  return typeof globalThis.window !== "undefined" && typeof SharedArrayBuffer !== "undefined";
+}
+
 function isSimpleProject(packageJson: string | undefined): boolean {
   if (!packageJson) return false;
   try {
@@ -136,7 +140,6 @@ export function LivePreview({
   const [showLogs, setShowLogs] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [iframeKey, setIframeKey] = useState(0);
-  const [initialPreviewHttpStatus, setInitialPreviewHttpStatus] = useState<number | null>(null);
 
   const previousEditedRef = useRef<Record<string, string>>({});
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -149,8 +152,6 @@ export function LivePreview({
     const cleaned = stripAnsi(line);
     if (!cleaned) return;
     setLogs((prev) => [...prev.slice(-149), cleaned]);
-    const m = /Public preview URL responded \(HTTP (\d+)\)/.exec(cleaned);
-    if (m) setInitialPreviewHttpStatus(Number.parseInt(m[1], 10));
   }, []);
 
   // Plain HTML projects (no package.json) don't support HMR — reload the iframe after sync.
@@ -162,20 +163,18 @@ export function LivePreview({
     return () => clearTimeout(t);
   }, [syncStatus, isPlainHtmlProject, status, reloadIframe]);
 
-  // Always auto-reload the iframe once after E2B preview becomes ready.
-  // Next.js dev mode may return HTTP 200 with blank content while still compiling
-  // on first request — waiting 5 s gives the compiler time to finish.
+  // The server-side already waits for a real HTTP 200/304/404 before sending "ready",
+  // so no overlay or multi-reload dance is needed here. One small reload gives the
+  // E2B tunnel edge nodes a moment to fully warm their cache.
   useEffect(() => {
     if (status !== "ready" || engine !== "e2b" || !previewUrl) return;
     if (didAutoReloadRef.current) return;
-    const delay = initialPreviewHttpStatus !== null && initialPreviewHttpStatus >= 500 ? 4000 : 5000;
-    const timer = setTimeout(() => {
+    const t = setTimeout(() => {
       didAutoReloadRef.current = true;
-      addLog("Auto-refreshing preview after initial compile…");
       reloadIframe();
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [status, engine, previewUrl, initialPreviewHttpStatus, addLog, reloadIframe]);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [status, engine, previewUrl, reloadIframe]);
 
   const mergedForWebContainer = useMemo(
     () => ({ ...workspaceFiles, ...editedFiles }),
@@ -223,7 +222,6 @@ export function LivePreview({
     setErrorMessage("");
     setStatus("booting");
     didAutoReloadRef.current = false;
-    setInitialPreviewHttpStatus(null);
     previousEditedRef.current = { ...editedFiles };
     let sawReady = false;
     let sawError = false;
@@ -357,7 +355,7 @@ export function LivePreview({
           }
           for (const [path] of updates) addLog(`Pushed ${path} to cloud preview`);
           addLog("Synced — refreshing preview…");
-          setTimeout(reloadIframe, 2500);
+          setTimeout(reloadIframe, 5000);
         })
         .catch(() => addLog("Hot update request failed."));
     } else {
@@ -373,6 +371,23 @@ export function LivePreview({
   }, [addLog, connectionId, editedFiles, engine, previewKey, reloadIframe, status]);
 
   const canToggleEngine = e2bAvailable === true && simple;
+
+  // WebContainers require SharedArrayBuffer, which is only available when COOP/COEP
+  // headers are set AND the browser is Chromium-based. Show a clear message instead
+  // of a silent white page when those conditions are not met.
+  if (engine === "webcontainer" && !isWebContainerSupported()) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white p-6 text-center">
+        <CircleAlert className="h-8 w-8 text-amber-500" />
+        <p className="text-sm font-medium text-slate-700">Browser not supported for Web Preview</p>
+        <p className="max-w-xs text-xs text-slate-500">
+          WebContainers require Chrome, Edge, or Brave with cross-origin isolation enabled.
+          Firefox and Safari are not supported.
+          {e2bAvailable === false && " Add an E2B_API_KEY to use cloud preview instead."}
+        </p>
+      </div>
+    );
+  }
 
   if (engine === null || e2bAvailable === null) {
     return (
