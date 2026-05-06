@@ -39,6 +39,16 @@ function sse(controller: ReadableStreamDefaultController<Uint8Array>, encoder: T
 }
 
 export async function POST(request: Request) {
+  try {
+    return await handlePreviewLogs(request);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[preview/logs] unhandled error:", message);
+    return Response.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+async function handlePreviewLogs(request: Request): Promise<Response> {
   const apiKey = process.env.E2B_API_KEY?.trim();
   if (!apiKey) {
     return Response.json(
