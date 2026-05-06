@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getAppUrl } from "@/lib/app-url";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
+  const appUrl = getAppUrl(request);
 
   if (!code || !state) {
     return NextResponse.redirect(`${appUrl}/dashboard?error=missing_params`);
