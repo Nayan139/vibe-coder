@@ -46,7 +46,7 @@
       <Badge className="mb-6 bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-50">
         Powered by NVIDIA AI
       </Badge>
-      <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-tight mb-6 bg-linear-to-r from-gray-900 via-violet-800 to-blue-700 bg-clip-text text-transparent">
+      <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-tight mb-6 bg-linear-to-r from-blue-700 via-blue-600 to-blue-500 bg-clip-text text-transparent">
         Ship Change's Return without code
       </h1>
       <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
@@ -192,16 +192,3 @@
           >
             <CardContent className="pt-6">
               <div
-                className={`w-12 h-12 rounded-xl bg-linear-to-br ${f.color} flex items-center justify-center mb-4`}
-              >
-                <f.icon className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">{f.title}</h3>
-              <p className="text-gray-500 leading-relaxed">{f.description}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  </section>
-</div>;
