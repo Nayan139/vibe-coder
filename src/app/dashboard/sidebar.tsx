@@ -44,7 +44,7 @@ interface SidebarProps {
 
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/projects", label: "My Projects", icon: FolderGit2, exact: false },
+  // { href: "/dashboard/projects", label: "My Projects", icon: FolderGit2, exact: false },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: false },
 ];
 
