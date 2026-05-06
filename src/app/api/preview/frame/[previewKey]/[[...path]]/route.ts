@@ -54,6 +54,15 @@ function extractRefFromReferer(referer: string | null): PersistedPreviewRef | nu
   }
 }
 
+function rewriteRootRelativeAssetUrls(html: string, proxyBase: string): string {
+  // Root-relative URLs like "/_next/..." bypass <base> and hit this app instead
+  // of the sandbox. Rewrite them to go through the preview proxy.
+  const attrPattern = /(\s(?:src|href|action)=["'])\/(?!\/)([^"']*)(["'])/gi;
+  return html.replace(attrPattern, (_m, prefix: string, rest: string, suffix: string) => {
+    return `${prefix}${proxyBase}${rest}${suffix}`;
+  });
+}
+
 async function proxyHandler(
   request: NextRequest,
   context: { params: Promise<Params> }
@@ -167,6 +176,7 @@ async function proxyHandler(
     } else {
       html = baseTag + html;
     }
+    html = rewriteRootRelativeAssetUrls(html, base);
     responseHeaders.set("content-type", "text/html; charset=utf-8");
     responseHeaders.delete("content-length");
     if (shouldPersistRef) {
