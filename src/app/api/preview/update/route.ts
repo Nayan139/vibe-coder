@@ -61,6 +61,13 @@ export async function POST(request: Request) {
       if (!rel) continue;
       await sandbox.files.write(`${E2B_PREVIEW_PROJECT_ROOT}/${rel}`, content);
     }
+
+    // Turbopack can occasionally hold onto stale SSR chunks in long-lived `next dev`
+    // sessions. Clearing `.next` makes the preview server regenerate bundles.
+    await sandbox.commands
+      .run(`rm -rf ${E2B_PREVIEW_PROJECT_ROOT}/.next`, { timeoutMs: 30_000 })
+      .catch(() => {});
+
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

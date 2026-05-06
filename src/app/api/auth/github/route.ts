@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAppUrl } from "@/lib/app-url";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  const appUrl = getAppUrl(request);
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login", process.env.NEXT_PUBLIC_APP_URL!));
+    return NextResponse.redirect(new URL("/login", appUrl));
   }
 
   const state = Buffer.from(user.id).toString("base64url");
 
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID!,
-    redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/github/callback`,
+    redirect_uri: `${appUrl}/api/auth/github/callback`,
     scope: "repo read:user",
     state,
   });
