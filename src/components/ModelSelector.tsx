@@ -13,6 +13,7 @@ interface ModelSelectorProps {
 function badgeClass(badge: string) {
   if (badge === "GROQ") return "bg-orange-100 text-orange-600";
   if (badge === "GEMINI") return "bg-blue-100 text-blue-600";
+  if (badge === "CLAUDE") return "bg-purple-100 text-purple-600";
   return "bg-green-100 text-green-600";
 }
 

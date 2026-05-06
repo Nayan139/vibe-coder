@@ -11,6 +11,17 @@ interface AIOptions {
   overrideModel?: string;
 }
 
+function extractFetchErrorDetails(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error && cause.message) {
+      return `${error.message} (${cause.message})`;
+    }
+    return error.message;
+  }
+  return String(error);
+}
+
 function resolveGroqModel(model: string): string {
   const normalized = model.trim();
 
@@ -55,8 +66,9 @@ export async function callAI(messages: AIMessage[], options: AIOptions = {}): Pr
   }
   if (provider === 'nvidia') return callNvidia(messages, model, maxTokens, temperature);
   if (provider === 'gemini') return callGemini(messages, model, maxTokens, temperature);
+  if (provider === 'claude') return callClaude(messages, model, maxTokens, temperature);
 
-  throw new Error(`Unknown LLM_PROVIDER: ${provider}. Must be "groq", "nvidia", or "gemini".`);
+  throw new Error(`Unknown LLM_PROVIDER: ${provider}. Must be "groq", "nvidia", "gemini", or "claude".`);
 }
 
 async function callGroq(
@@ -65,14 +77,23 @@ async function callGroq(
   maxTokens: number,
   temperature: number
 ): Promise<string> {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
-  });
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("Missing GROQ_API_KEY. Set it in your environment.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    });
+  } catch (error) {
+    throw new Error(`Groq request failed before response: ${extractFetchErrorDetails(error)}`);
+  }
 
   if (!response.ok) {
     const err = await response.text();
@@ -95,14 +116,23 @@ async function callNvidia(
   maxTokens: number,
   temperature: number
 ): Promise<string> {
-  const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
-  });
+  if (!process.env.NVIDIA_API_KEY) {
+    throw new Error("Missing NVIDIA_API_KEY. Set it in your environment.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+    });
+  } catch (error) {
+    throw new Error(`NVIDIA request failed before response: ${extractFetchErrorDetails(error)}`);
+  }
 
   if (!response.ok) {
     const err = await response.text();
@@ -125,6 +155,10 @@ async function callGemini(
   maxTokens: number,
   temperature: number
 ): Promise<string> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("Missing GEMINI_API_KEY. Set it in your environment.");
+  }
+
   const systemMsg = messages.find((m) => m.role === 'system');
   const conversationMsgs = messages.filter((m) => m.role !== 'system');
 
@@ -144,11 +178,16 @@ async function callGemini(
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error(`Gemini request failed before response: ${extractFetchErrorDetails(error)}`);
+  }
 
   if (!response.ok) {
     const err = await response.text();
@@ -166,4 +205,58 @@ async function callGemini(
 
   const data = await response.json();
   return data.candidates[0].content.parts[0].text as string;
+}
+
+async function callClaude(
+  messages: AIMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error("Missing ANTHROPIC_API_KEY. Set it in your environment.");
+  }
+
+  const systemMsg = messages.find((m) => m.role === 'system');
+  const conversationMsgs = messages.filter((m) => m.role !== 'system');
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    temperature,
+    messages: conversationMsgs.map((m) => ({ role: m.role, content: m.content })),
+  };
+
+  if (systemMsg) {
+    body.system = systemMsg.content;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error(`Claude request failed before response: ${extractFetchErrorDetails(error)}`);
+  }
+
+  if (!response.ok) {
+    const err = await response.text();
+    if (response.status === 401) {
+      throw new Error(`Claude API key is invalid or expired (401). Check ANTHROPIC_API_KEY in your .env.local.`);
+    }
+    if (response.status === 404) {
+      throw new Error(`Claude model "${model}" not found (404). Update the model name in MODEL_OPTIONS.`);
+    }
+    throw new Error(`Claude API error ${response.status}: ${err}`);
+  }
+
+  const data = await response.json();
+  return data.content[0].text as string;
 }
