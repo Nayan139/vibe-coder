@@ -1,18 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { mountProjectFiles, startDevServer, teardownWebContainer, updateFileInContainer } from "@/lib/webcontainer";
 import { HotSyncIndicator, type SyncStatus } from "@/components/HotSyncIndicator";
 
-type PreviewEngine = "e2b" | "webcontainer";
-
-type E2bStatus = "idle" | "booting" | "ready" | "error";
-type WcPreviewStatus = "idle" | "mounting" | "installing" | "starting" | "ready" | "error";
-
-type PreviewStatus = E2bStatus | WcPreviewStatus;
+type PreviewStatus = "idle" | "booting" | "ready" | "error";
 
 interface LivePreviewProps {
   previewKey: string;
@@ -33,24 +27,6 @@ interface LivePreviewProps {
   syncStatus?: SyncStatus;
   /** Step 9: file paths synced in the last hot-sync batch */
   lastSyncedFiles?: string[];
-}
-
-function isWebContainerSupported(): boolean {
-  return typeof globalThis.window !== "undefined" && typeof SharedArrayBuffer !== "undefined";
-}
-
-function isSimpleProject(packageJson: string | undefined): boolean {
-  if (!packageJson) return false;
-  try {
-    const pkg = JSON.parse(packageJson) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    const n = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length;
-    return n < 15;
-  } catch {
-    return false;
-  }
 }
 
 function stripAnsi(line: string): string {
@@ -126,14 +102,11 @@ export function LivePreview({
   editedFiles,
   installCommand,
   startCommand,
-  repoTreePaths = [],
   projectId,
   syncStatus = "idle",
   lastSyncedFiles = [],
 }: LivePreviewProps) {
-  const [engine, setEngine] = useState<PreviewEngine | null>(null);
   const [e2bAvailable, setE2bAvailable] = useState<boolean | null>(null);
-
   const [status, setStatus] = useState<PreviewStatus>("idle");
   const [previewUrl, setPreviewUrl] = useState("");
   const [sandboxId, setSandboxId] = useState("");
@@ -168,22 +141,14 @@ export function LivePreview({
   // so no overlay or multi-reload dance is needed here. One small reload gives the
   // E2B tunnel edge nodes a moment to fully warm their cache.
   useEffect(() => {
-    if (status !== "ready" || engine !== "e2b" || !previewUrl) return;
+    if (status !== "ready" || !previewUrl) return;
     if (didAutoReloadRef.current) return;
     const t = setTimeout(() => {
       didAutoReloadRef.current = true;
       reloadIframe();
     }, 1500);
     return () => clearTimeout(t);
-  }, [status, engine, previewUrl, reloadIframe]);
-
-  const mergedForWebContainer = useMemo(
-    () => ({ ...workspaceFiles, ...editedFiles }),
-    [workspaceFiles, editedFiles]
-  );
-
-  const pkgJson = workspaceFiles["package.json"] ?? editedFiles["package.json"];
-  const simple = isSimpleProject(pkgJson);
+  }, [status, previewUrl, reloadIframe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,13 +158,10 @@ export function LivePreview({
         if (cancelled) return;
         const ok = Boolean(data.e2bConfigured);
         setE2bAvailable(ok);
-        if (ok) setEngine("e2b");
-        else setEngine("webcontainer");
       })
       .catch(() => {
         if (cancelled) return;
         setE2bAvailable(false);
-        setEngine("webcontainer");
       });
     return () => {
       cancelled = true;
@@ -232,7 +194,7 @@ export function LivePreview({
     const envOverlay: Record<string, string> = {};
     if (envContent.trim()) {
       envOverlay[".env"] = envContent;
-      if (mergedForWebContainer["package.json"]?.includes('"next"')) {
+      if ((workspaceFiles["package.json"] ?? editedFiles["package.json"])?.includes('"next"')) {
         envOverlay[".env.local"] = envContent;
       }
       addLog("🔐 Injecting project environment variables…");
@@ -276,123 +238,42 @@ export function LivePreview({
     }
   }
 
-  async function startWebContainer() {
-    try {
-      setLogs([]);
-      setPreviewUrl("");
-      setStatus("mounting");
-      addLog("Mounting project files in the browser…");
-
-      const envContent = await fetchProjectEnvContent();
-      const filesWithEnv = { ...mergedForWebContainer };
-      if (envContent.trim()) {
-        filesWithEnv[".env"] = envContent;
-        if (filesWithEnv["package.json"]?.includes('"next"')) {
-          filesWithEnv[".env.local"] = envContent;
-        }
-        addLog("🔐 Environment variables loaded from project settings");
-      }
-
-      const wc = await mountProjectFiles(filesWithEnv);
-
-      addLog(`Installing: ${installCommand}`);
-      addLog(`Starting: ${startCommand}`);
-
-      await startDevServer(
-        wc,
-        installCommand,
-        startCommand,
-        Object.keys(filesWithEnv),
-        repoTreePaths,
-        (url) => {
-          setPreviewUrl(url);
-          setStatus("ready");
-          addLog(`Server ready at ${url}`);
-        },
-        (line) => addLog(line),
-        (phase) => setStatus(phase)
-      );
-      previousEditedRef.current = { ...editedFiles };
-    } catch (error) {
-      setStatus("error");
-      const message = error instanceof Error ? error.message : "Failed to start preview.";
-      setErrorMessage(message);
-      addLog(`Error: ${message}`);
-      if (message.includes("instance limit")) {
-        addLog("Attempting one-time WebContainer reset…");
-        teardownWebContainer();
-      }
-    }
-  }
-
   async function handleStartOrRestart() {
-    if (engine === "e2b") {
-      await startE2B();
-      return;
-    }
-    await startWebContainer();
+    await startE2B();
   }
 
   useEffect(() => {
-    if (status !== "ready" || engine === null) return;
+    if (status !== "ready") return;
 
     const prev = previousEditedRef.current;
     const updates = Object.entries(editedFiles).filter(([path, content]) => prev[path] !== content);
     if (updates.length === 0) return;
 
-    if (engine === "e2b") {
-      void fetch("/api/preview/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          previewKey,
-          connectionId,
-          changes: Object.fromEntries(updates),
-        }),
+    void fetch("/api/preview/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        previewKey,
+        connectionId,
+        changes: Object.fromEntries(updates),
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const j = (await res.json().catch(() => ({}))) as { error?: string };
+          addLog(`Hot update failed: ${j.error ?? res.status}`);
+          return;
+        }
+        for (const [path] of updates) addLog(`Pushed ${path} to cloud preview`);
+        addLog("Synced — refreshing preview…");
+        setTimeout(reloadIframe, 5000);
       })
-        .then(async (res) => {
-          if (!res.ok) {
-            const j = (await res.json().catch(() => ({}))) as { error?: string };
-            addLog(`Hot update failed: ${j.error ?? res.status}`);
-            return;
-          }
-          for (const [path] of updates) addLog(`Pushed ${path} to cloud preview`);
-          addLog("Synced — refreshing preview…");
-          setTimeout(reloadIframe, 5000);
-        })
-        .catch(() => addLog("Hot update request failed."));
-    } else {
-      void Promise.all(
-        updates.map(async ([path, content]) => {
-          await updateFileInContainer(path, content);
-          addLog(`Hot updated ${path}`);
-        })
-      );
-    }
+      .catch(() => addLog("Hot update request failed."));
 
     previousEditedRef.current = { ...prev, ...editedFiles };
-  }, [addLog, connectionId, editedFiles, engine, previewKey, reloadIframe, status]);
+  }, [addLog, connectionId, editedFiles, previewKey, reloadIframe, status]);
 
-  const canToggleEngine = e2bAvailable === true && simple;
-
-  // WebContainers require SharedArrayBuffer, which is only available when COOP/COEP
-  // headers are set AND the browser is Chromium-based. Show a clear message instead
-  // of a silent white page when those conditions are not met.
-  if (engine === "webcontainer" && !isWebContainerSupported()) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white p-6 text-center">
-        <CircleAlert className="h-8 w-8 text-amber-500" />
-        <p className="text-sm font-medium text-slate-700">Browser not supported for Web Preview</p>
-        <p className="max-w-xs text-xs text-slate-500">
-          WebContainers require Chrome, Edge, or Brave with cross-origin isolation enabled.
-          Firefox and Safari are not supported.
-          {e2bAvailable === false && " Add an E2B_API_KEY to use cloud preview instead."}
-        </p>
-      </div>
-    );
-  }
-
-  if (engine === null || e2bAvailable === null) {
+  if (e2bAvailable === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
         <Loader2 className="h-6 w-6 animate-spin text-rose-500" />
@@ -403,37 +284,15 @@ export function LivePreview({
 
   const loadingMessage =
     status === "booting"
-      ? engine === "e2b"
-        ? "Cloning & installing in cloud…"
-        : "Working…"
-      : status === "mounting"
-        ? "Mounting files…"
-        : status === "installing"
-          ? "Installing dependencies…"
-          : status === "starting"
-            ? "Starting dev server…"
-            : "";
+      ? "Cloning & installing in cloud…"
+      : "";
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-slate-700">Live Preview</span>
-          {e2bAvailable && (
-            <span className="text-xs text-slate-400">
-              {engine === "e2b" ? "Cloud (E2B)" : "Browser"}
-            </span>
-          )}
-          {canToggleEngine && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              onClick={() => setEngine((e) => (e === "e2b" ? "webcontainer" : "e2b"))}
-            >
-              Use {engine === "e2b" ? "browser" : "cloud"}
-            </Button>
-          )}
+          <span className="text-xs text-slate-400">Cloud (E2B)</span>
           {status === "ready" && syncStatus === "idle" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
               <CircleCheck className="h-3.5 w-3.5" />
@@ -449,16 +308,13 @@ export function LivePreview({
               Failed
             </span>
           )}
-          {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") &&
-            loadingMessage && (
-              <span className="text-xs text-amber-700">{loadingMessage}</span>
-            )}
+          {status === "booting" && loadingMessage && <span className="text-xs text-amber-700">{loadingMessage}</span>}
         </div>
 
         <div className="flex items-center gap-2">
           {!e2bAvailable && (
             <span className="hidden text-xs text-slate-400 sm:inline">
-              Add E2B_API_KEY for cloud preview
+              Missing E2B_API_KEY
             </span>
           )}
           {status === "ready" && previewUrl ? (
@@ -497,7 +353,7 @@ export function LivePreview({
             </>
           )}
 
-          {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
+          {status === "booting" && (
             <Button size="sm" disabled className="h-8 gap-1">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Working
@@ -509,11 +365,7 @@ export function LivePreview({
       {showLogs && (
         <div className="h-36 overflow-y-auto border-b border-slate-100 bg-slate-950 p-3 font-mono text-xs text-green-300">
           {logs.length === 0 ? (
-            <p className="text-slate-400">
-              {engine === "e2b"
-                ? "Cloud preview clones your repo, installs deps, and streams logs here."
-                : "Logs appear after you start browser preview."}
-            </p>
+            <p className="text-slate-400">Cloud preview clones your repo, installs deps, and streams logs here.</p>
           ) : (
             logs.map((line, idx) => <div key={`${idx}-${line.slice(0, 24)}`}>{line}</div>)
           )}
@@ -526,41 +378,33 @@ export function LivePreview({
             key={iframeKey}
             ref={iframeRef}
             src={
-              engine === "e2b"
-                ? `/api/preview/frame/${previewKey}/?previewUrl=${encodeURIComponent(previewUrl)}&sandboxId=${encodeURIComponent(
-                    sandboxId
-                  )}`
-                : previewUrl
+              `/api/preview/frame/${previewKey}/?previewUrl=${encodeURIComponent(previewUrl)}&sandboxId=${encodeURIComponent(
+                sandboxId
+              )}`
             }
             className="h-full w-full border-0"
             title="Live Preview"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-slate-500">
-            {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
+            {status === "booting" && (
               <>
                 <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
                 <p className="text-sm">{loadingMessage || "Working…"}</p>
-                {(status === "booting" || status === "installing") && engine === "e2b" && (
-                  <p className="text-xs text-slate-400">First cloud run often takes 1–3 minutes.</p>
-                )}
+                <p className="text-xs text-slate-400">First cloud run often takes 1–3 minutes.</p>
               </>
             )}
 
             {status === "idle" && (
               <>
                 <p className="text-sm font-medium text-slate-700">
-                  {engine === "e2b" ? "Run the repo in a cloud sandbox" : "Run the project in your browser"}
+                  {e2bAvailable ? "Run the repo in a cloud sandbox" : "Cloud preview is not configured"}
                 </p>
                 <p className="max-w-sm text-xs text-slate-500">
                   Install: <code className="text-slate-700">{installCommand}</code> · Start:{" "}
                   <code className="text-slate-700">{startCommand}</code>
                 </p>
-                {!e2bAvailable && (
-                  <p className="text-xs text-amber-700">
-                    Web Preview uses WebContainers (headers/COOP). For fewer issues, add E2B_API_KEY.
-                  </p>
-                )}
+                {!e2bAvailable && <p className="text-xs text-amber-700">Set `E2B_API_KEY` and refresh.</p>}
               </>
             )}
 

@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Params = { previewKey: string; path?: string[] };
+type PersistedPreviewRef = { sandboxId: string; previewUrl: string };
 
 // Headers that would block the iframe from embedding the proxied content.
 const STRIP_RESPONSE_HEADERS = new Set([
@@ -20,6 +21,39 @@ const STRIP_RESPONSE_HEADERS = new Set([
   "content-encoding",
 ]);
 
+function cookieNameForPreview(previewKey: string): string {
+  return `vibe_preview_ref_${previewKey}`;
+}
+
+function parsePersistedRef(raw: string | undefined): PersistedPreviewRef | null {
+  if (!raw) return null;
+  try {
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const parsed = JSON.parse(decoded) as Partial<PersistedPreviewRef>;
+    if (!parsed.sandboxId || !parsed.previewUrl) return null;
+    return { sandboxId: parsed.sandboxId, previewUrl: parsed.previewUrl };
+  } catch {
+    return null;
+  }
+}
+
+function encodePersistedRef(value: PersistedPreviewRef): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function extractRefFromReferer(referer: string | null): PersistedPreviewRef | null {
+  if (!referer) return null;
+  try {
+    const url = new URL(referer);
+    const sandboxId = url.searchParams.get("sandboxId")?.trim();
+    const previewUrl = url.searchParams.get("previewUrl")?.trim();
+    if (!sandboxId || !previewUrl) return null;
+    return { sandboxId, previewUrl };
+  } catch {
+    return null;
+  }
+}
+
 async function proxyHandler(
   request: NextRequest,
   context: { params: Promise<Params> }
@@ -32,17 +66,27 @@ async function proxyHandler(
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
+  const cookieName = cookieNameForPreview(previewKey);
+  const queryRef = {
+    sandboxId: request.nextUrl.searchParams.get("sandboxId")?.trim() ?? "",
+    previewUrl: request.nextUrl.searchParams.get("previewUrl")?.trim() ?? "",
+  };
+  const refererRef = extractRefFromReferer(request.headers.get("referer"));
+  const cookieRef = parsePersistedRef(request.cookies.get(cookieName)?.value);
+  const recoveryRef =
+    queryRef.sandboxId && queryRef.previewUrl
+      ? { sandboxId: queryRef.sandboxId, previewUrl: queryRef.previewUrl }
+      : refererRef ?? cookieRef;
+
   let entry = previewSandboxes.get(previewKey);
   if (!entry) {
-    const sandboxId = request.nextUrl.searchParams.get("sandboxId")?.trim();
-    const previewUrlFromQuery = request.nextUrl.searchParams.get("previewUrl")?.trim();
     const apiKey = process.env.E2B_API_KEY?.trim();
 
     // Recover sandbox binding when this request lands on a fresh server instance.
-    if (sandboxId && previewUrlFromQuery && apiKey) {
+    if (recoveryRef?.sandboxId && recoveryRef.previewUrl && apiKey) {
       try {
-        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
-        entry = { sandbox, previewUrl: previewUrlFromQuery, userId: user.id };
+        const sandbox = await Sandbox.connect(recoveryRef.sandboxId, { apiKey });
+        entry = { sandbox, previewUrl: recoveryRef.previewUrl, userId: user.id };
         previewSandboxes.set(previewKey, entry);
       } catch {
         // Fall through to user-facing "preview not available" state.
@@ -110,6 +154,9 @@ async function proxyHandler(
   });
 
   const contentType = upstream.headers.get("content-type") ?? "";
+  const shouldPersistRef = Boolean(recoveryRef?.sandboxId && recoveryRef.previewUrl);
+  const persistedValue = recoveryRef ? encodePersistedRef(recoveryRef) : "";
+
   if (contentType.includes("text/html")) {
     let html = await upstream.text();
     // Inject <base> so every relative URL resolves through this proxy.
@@ -122,9 +169,21 @@ async function proxyHandler(
     }
     responseHeaders.set("content-type", "text/html; charset=utf-8");
     responseHeaders.delete("content-length");
+    if (shouldPersistRef) {
+      responseHeaders.append(
+        "set-cookie",
+        `${cookieName}=${persistedValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`
+      );
+    }
     return new Response(html, { status: upstream.status, headers: responseHeaders });
   }
 
+  if (shouldPersistRef) {
+    responseHeaders.append(
+      "set-cookie",
+      `${cookieName}=${persistedValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`
+    );
+  }
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 }
 
