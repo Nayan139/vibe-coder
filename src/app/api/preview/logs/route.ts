@@ -204,6 +204,11 @@ export async function POST(request: Request) {
           onLog: log,
         });
 
+        // Ensure no stale dev/build artifacts survive between restarts.
+        // Some repos/scripts create `.next` during install or prestart steps.
+        log("Clearing Next.js build cache (.next)…");
+        await sandbox.commands.run(`rm -rf ${root}/.next`, { timeoutMs: 60_000 }).catch(() => {});
+
         const preferredPort = detectPreviewPort(startCommand);
         log(`Launching dev server (E2B managed background, preferred port ${preferredPort})…`);
         await launchPreviewDevServerManaged(sandbox, root, preferredPort, startCommand, log);

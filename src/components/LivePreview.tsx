@@ -519,7 +519,13 @@ export function LivePreview({
 
       <div className="min-h-0 flex-1 bg-slate-50">
         {status === "ready" && previewUrl ? (
-          <iframe key={iframeKey} ref={iframeRef} src={previewUrl} className="h-full w-full border-0" title="Live Preview" />
+          <iframe
+            key={iframeKey}
+            ref={iframeRef}
+            src={engine === "e2b" ? `/api/preview/frame/${previewKey}/` : previewUrl}
+            className="h-full w-full border-0"
+            title="Live Preview"
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-slate-500">
             {(status === "booting" || status === "mounting" || status === "installing" || status === "starting") && (
