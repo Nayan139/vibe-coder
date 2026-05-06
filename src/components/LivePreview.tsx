@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal, Play, RotateCcw, Loader2, CircleCheck, CircleAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { HotSyncIndicator, type SyncStatus } from "@/components/HotSyncIndicator";
-
 type PreviewStatus = "idle" | "booting" | "ready" | "error";
 
 interface LivePreviewProps {
@@ -14,19 +12,13 @@ interface LivePreviewProps {
   repoFullName: string;
   branch: string;
   provider: string;
-  /** Broad file context for in-browser WebContainer mount (may be partial). */
   workspaceFiles: Record<string, string>;
   /** Accumulated + in-review AI edits — overlaid on E2B clone and hot-pushed while preview runs. */
   editedFiles: Record<string, string>;
   installCommand: string;
   startCommand: string;
   repoTreePaths?: string[];
-  /** Step 10: project ID used to fetch saved env vars before preview boot */
   projectId?: string;
-  /** Step 9: hot-sync status passed from editor page */
-  syncStatus?: SyncStatus;
-  /** Step 9: file paths synced in the last hot-sync batch */
-  lastSyncedFiles?: string[];
 }
 
 function stripAnsi(line: string): string {
@@ -103,8 +95,6 @@ export function LivePreview({
   installCommand,
   startCommand,
   projectId,
-  syncStatus = "idle",
-  lastSyncedFiles = [],
 }: LivePreviewProps) {
   const [e2bAvailable, setE2bAvailable] = useState<boolean | null>(null);
   const [status, setStatus] = useState<PreviewStatus>("idle");
@@ -127,15 +117,6 @@ export function LivePreview({
     if (!cleaned) return;
     setLogs((prev) => [...prev.slice(-149), cleaned]);
   }, []);
-
-  // Plain HTML projects (no package.json) don't support HMR — reload the iframe after sync.
-  const isPlainHtmlProject = !workspaceFiles["package.json"] && !editedFiles["package.json"];
-
-  useEffect(() => {
-    if (status !== "ready" || !isPlainHtmlProject || syncStatus !== "done") return;
-    const t = setTimeout(reloadIframe, 0);
-    return () => clearTimeout(t);
-  }, [syncStatus, isPlainHtmlProject, status, reloadIframe]);
 
   // The server-side already waits for a real HTTP 200/304/404 before sending "ready",
   // so no overlay or multi-reload dance is needed here. One small reload gives the
@@ -293,14 +274,11 @@ export function LivePreview({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-slate-700">Live Preview</span>
           <span className="text-xs text-slate-400">Cloud (E2B)</span>
-          {status === "ready" && syncStatus === "idle" && (
+          {status === "ready" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
               <CircleCheck className="h-3.5 w-3.5" />
               Live
             </span>
-          )}
-          {status === "ready" && syncStatus !== "idle" && (
-            <HotSyncIndicator status={syncStatus} lastSyncedFiles={lastSyncedFiles} />
           )}
           {status === "error" && (
             <span className="inline-flex max-w-55 truncate text-xs text-red-600" title={errorMessage}>
