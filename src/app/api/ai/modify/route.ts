@@ -86,7 +86,6 @@ export async function POST(request: Request) {
     projectContext?: string;
     sessionId?: string;
     projectId?: string;
-    selectedFiles?: string[];
     overrideProvider?: string;
     overrideModel?: string;
   };
@@ -96,7 +95,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { prompt, fileContents, projectContext, sessionId, projectId, selectedFiles, overrideProvider, overrideModel } = body;
+  const { prompt, fileContents, projectContext, sessionId, projectId, overrideProvider, overrideModel } = body;
 
   if (!prompt || !fileContents) {
     return NextResponse.json({ error: "prompt and fileContents are required" }, { status: 400 });
@@ -199,35 +198,9 @@ Return the modified files as JSON.`;
       );
     }
 
-    const assistantSummary = `I've made the following changes:\n${Object.keys(safeModified)
-      .map((f) => `• ${f}`)
-      .join("\n")}${
-      Object.keys(safeCreated).length > 0
-        ? `\n\nNew files created:\n${Object.keys(safeCreated)
-            .map((f) => `• ${f} (NEW)`)
-            .join("\n")}`
-        : ""
-    }\n\nCheck the diff preview on the right and click "Apply Changes" to proceed.`;
-
     let resolvedSessionId: string | undefined;
 
     if (sessionId) {
-      // Save chat messages with snapshot of what changed this turn
-      await supabase.from("chat_messages").insert([
-        {
-          session_id: sessionId,
-          role: "user",
-          content: prompt,
-          selected_files: selectedFiles ?? null,
-        },
-        {
-          session_id: sessionId,
-          role: "assistant",
-          content: assistantSummary,
-          changes_snapshot: allChanges,
-        },
-      ]);
-
       // Fetch existing accumulated_changes to merge
       const { data: existingSession } = await supabase
         .from("ai_sessions")
@@ -279,20 +252,6 @@ Return the modified files as JSON.`;
         console.error("ai_sessions insert:", insErr);
       } else if (newSession?.id) {
         resolvedSessionId = newSession.id;
-        await supabase.from("chat_messages").insert([
-          {
-            session_id: newSession.id,
-            role: "user",
-            content: prompt,
-            selected_files: selectedFiles ?? null,
-          },
-          {
-            session_id: newSession.id,
-            role: "assistant",
-            content: assistantSummary,
-            changes_snapshot: allChanges,
-          },
-        ]);
       }
     }
 

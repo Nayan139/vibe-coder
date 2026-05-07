@@ -1,3 +1,4 @@
+import { Bot, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function RepoCardSkeleton() {
@@ -72,11 +73,29 @@ export function FileTreeSkeleton() {
 export function AIThinkingSkeleton() {
   return (
     <div className="flex justify-start gap-3 px-4">
-      <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
-      <div className="min-w-50 max-w-[85%] space-y-2 rounded-xl rounded-bl-sm bg-slate-100 px-3 py-3">
-        <Skeleton className="h-3 w-full bg-slate-200" />
-        <Skeleton className="h-3 w-5/6 bg-slate-200" />
-        <Skeleton className="h-3 w-4/6 bg-slate-200" />
+      <div className="relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+        <Bot className="h-4 w-4" />
+        <span className="absolute -right-0.5 -top-0.5 inline-flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-300 opacity-70" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-400" />
+        </span>
+      </div>
+      <div className="min-w-50 max-w-[85%] rounded-2xl rounded-bl-sm border border-rose-100 bg-linear-to-br from-rose-50/70 to-amber-50/60 px-3 py-3 shadow-sm">
+        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-rose-600">
+          <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+          AI is preparing your update...
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-full bg-slate-200/80" />
+          <Skeleton className="h-3 w-5/6 bg-slate-200/80" />
+          <Skeleton className="h-3 w-4/6 bg-slate-200/80" />
+        </div>
+        <div className="mt-2.5 flex items-center gap-1.5 text-[10px] text-slate-500">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-rose-400 [animation-delay:-0.2s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-rose-400 [animation-delay:-0.1s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-rose-400" />
+          <span className="ml-1">Analyzing files and generating diff</span>
+        </div>
       </div>
     </div>
   );

@@ -349,23 +349,10 @@ Return modified files as JSON.`;
       );
     }
 
-    const summary = `I analyzed ${filesToRead.length} file${filesToRead.length !== 1 ? "s" : ""} and made the following changes:\n${
-      Object.keys(safeModified).map((f) => `• ${f}`).join("\n")
-    }${
-      Object.keys(safeCreated).length > 0
-        ? `\n\nNew files created:\n${Object.keys(safeCreated).map((f) => `• ${f} (NEW)`).join("\n")}`
-        : ""
-    }\n\nCheck the diff on the right and click "Apply Changes" to proceed.`;
-
     // ── Persist to Supabase ───────────────────────────────────────────────────
     let resolvedSessionId: string | undefined;
 
     if (sessionId) {
-      await supabase.from("chat_messages").insert([
-        { session_id: sessionId, role: "user", content: prompt, selected_files: null },
-        { session_id: sessionId, role: "assistant", content: summary, changes_snapshot: allChanges },
-      ]);
-
       const { data: existing } = await supabase
         .from("ai_sessions")
         .select("accumulated_changes")
@@ -410,10 +397,6 @@ Return modified files as JSON.`;
 
       if (!insErr && newSession?.id) {
         resolvedSessionId = newSession.id;
-        await supabase.from("chat_messages").insert([
-          { session_id: newSession.id, role: "user", content: prompt, selected_files: null },
-          { session_id: newSession.id, role: "assistant", content: summary, changes_snapshot: allChanges },
-        ]);
       }
     }
 
