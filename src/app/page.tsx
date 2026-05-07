@@ -57,6 +57,7 @@ export default function LandingPage() {
             <a href="#features" className="cursor-pointer transition-colors duration-300 hover:text-rose-600">Features</a>
             <a href="#workflow" className="cursor-pointer transition-colors duration-300 hover:text-rose-600">Workflow</a>
             <a href="#use-cases" className="cursor-pointer transition-colors duration-300 hover:text-rose-600">Use cases</a>
+            <Link href="/presentation" className="cursor-pointer transition-colors duration-300 hover:text-rose-600">Presentation</Link>
           </nav>
           <div className="flex items-center gap-3">
             <Link href="/login">
@@ -92,6 +93,11 @@ export default function LandingPage() {
                 <Button size="lg" className="h-12 cursor-pointer gap-2 border-0 bg-linear-to-r from-rose-500 to-amber-400 px-8 text-base text-white transition-all duration-300 hover:-translate-y-0.5 hover:opacity-90 hover:shadow-xl hover:shadow-rose-200/60">
                   Start building free
                   <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/presentation">
+                <Button variant="outline" size="lg" className="h-12 cursor-pointer border-slate-200 bg-white px-8 text-base text-slate-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50">
+                  View presentation
                 </Button>
               </Link>
               <Link href="/dashboard">
@@ -220,7 +226,7 @@ export default function LandingPage() {
             <CardContent className="p-8">
               <p className="mb-5 text-sm uppercase tracking-wider text-white/80">Team feedback</p>
               <p className="mb-6 text-lg leading-relaxed text-white">
-                "The new flow helped us execute redesign tasks and dashboard improvements much faster, while still maintaining clean review standards."
+                &quot;The new flow helped us execute redesign tasks and dashboard improvements much faster, while still maintaining clean review standards.&quot;
               </p>
               <p className="text-sm text-white/80">Product Engineer, B2B SaaS Team</p>
             </CardContent>

@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -44,6 +44,19 @@ export default function LoginPage() {
 
   return (
     <div className="w-full max-w-md">
+      <div className="mb-4">
+        <Link href="/">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="cursor-pointer gap-1.5 px-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+        </Link>
+      </div>
       <div className="mb-8 text-center">
         <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-rose-500">
           Welcome back
